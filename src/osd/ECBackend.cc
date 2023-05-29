@@ -1114,7 +1114,7 @@ void ECBackend::handle_sub_write_reply(
     trace.event("sub write applied");
     assert(i->second.pending_apply.count(from));
     i->second.pending_apply.erase(from);
-    dout(0) << "mydebug:rmw_info#"<<i->second.hoid<<","<<i->second.tid<<",sub_w_end"<<","<<sub_w_end_time.to_nsec()<<"#"<< dendl;
+    //dout(0) << "mydebug:rmw_info#"<<i->second.hoid<<","<<i->second.tid<<",sub_w_end"<<","<<sub_w_end_time.to_nsec()<<"#"<< dendl;
   }
 
   if (i->second.pending_apply.empty() && i->second.on_all_applied) {
@@ -1267,7 +1267,7 @@ void ECBackend::handle_sub_read_reply(
     Op *my_op = &(waiting_reads.front());
       if(my_op->read_in_progress()){
         utime_t sub_r_end_time = ceph_clock_now();
-        dout(0) << "mydebug:rmw_info#"<<my_op->hoid<<","<<my_op->tid<<",sub_r_end"<<","<<sub_r_end_time.to_nsec()<<"#"<< dendl;
+        //dout(0) << "mydebug:rmw_info#"<<my_op->hoid<<","<<my_op->tid<<",sub_r_end"<<","<<sub_r_end_time.to_nsec()<<"#"<< dendl;
       }else{
         dout(0)<<"not in read progress"<<dendl;
       }
@@ -1875,8 +1875,7 @@ bool ECBackend::try_state_to_reads()
   
   //判断哪些是要从远程读的
   if (op->using_cache) {
-    dout(20) << __func__ << "mydebug:op->using_cache"
-	     << dendl;
+    //dout(20) << __func__ << "mydebug:op->using_cache"<< dendl;
     cache.open_write_pin(op->pin);
 
     extent_set empty;
@@ -1904,8 +1903,7 @@ bool ECBackend::try_state_to_reads()
       }
     }
   } else {
-    dout(20) << __func__ << "mydebug:not_using cache"
-	     << dendl;
+    //dout(20) << __func__ << "mydebug:not_using cache"<< dendl;
     op->remote_read = op->plan.to_read;
   }
 
@@ -1927,7 +1925,7 @@ bool ECBackend::try_state_to_reads()
     //probe read start time in rmw
     //#object_id,tid,r_start,time#
     utime_t r_start_time = ceph_clock_now();
-    dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",r_start"<<","<<r_start_time.to_nsec()<<"#"<< dendl;
+    //dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",r_start"<<","<<r_start_time.to_nsec()<<"#"<< dendl;
    
     objects_read_async_no_cache(
       op->remote_read,
@@ -1939,7 +1937,7 @@ bool ECBackend::try_state_to_reads()
 	check_ops();
       });
   }else{
-    dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",r_start"<<",0#"<< dendl;
+    //dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",r_start"<<",0#"<< dendl;
   }
 
   return true;
@@ -1965,7 +1963,7 @@ bool ECBackend::try_reads_to_commit()
   }
 
   utime_t r_end_time = ceph_clock_now();
-  dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",r_end"<<","<<r_end_time.to_nsec()<<"#"<< dendl;
+  //dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",r_end"<<","<<r_end_time.to_nsec()<<"#"<< dendl;
   waiting_reads.pop_front();//到这一步说明已经读完了，就把waiting_reads的给放出来
   waiting_commit.push_back(*op);//放入waiting_commit队列中
 
@@ -1973,7 +1971,7 @@ bool ECBackend::try_reads_to_commit()
   dout(20) << __func__ << ": " << cache << dendl;
 
   utime_t m_start_time = ceph_clock_now();
-  dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",m_start"<<","<<m_start_time.to_nsec()<<"#"<< dendl;
+  //dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",m_start"<<","<<m_start_time.to_nsec()<<"#"<< dendl;
 
   get_parent()->apply_stats(
     op->hoid,
@@ -2051,7 +2049,7 @@ bool ECBackend::try_reads_to_commit()
   op->remote_read_result.clear();//该写的已经写入written_set中了，可以把remote_read这些删掉了
 
   utime_t m_end_time = ceph_clock_now();
-  dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",m_end"<<","<<m_end_time.to_nsec()<<"#"<< dendl;
+  //dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",m_end"<<","<<m_end_time.to_nsec()<<"#"<< dendl;
 
   dout(10) << "onreadable_sync: " << op->on_local_applied_sync << dendl;
   ObjectStore::Transaction empty;
@@ -2120,7 +2118,7 @@ bool ECBackend::try_reads_to_commit()
   }
 
   utime_t w_start_time = ceph_clock_now();
-  dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",w_start"<<","<<w_start_time.to_nsec()<<"#"<< dendl;
+  //dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",w_start"<<","<<w_start_time.to_nsec()<<"#"<< dendl;
   if (should_write_local) {//这部分是写自己的
       handle_sub_write(
 	get_parent()->whoami_shard(),
@@ -2153,17 +2151,17 @@ bool ECBackend::try_finish_rmw()
     //dout(0) << "mydebug:client_op:"<<op->client_op->hoid<<","<<op->client_op->tid<<"#"<< dendl;
     if(op->client_op->hoid==op->hoid&&op->client_op->tid==op->tid){
       op->client_op->mark_w_end();
-      dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",w_time_total_read"<<","<<op->client_op->get_w_time_real()<<"#"<< dendl;
+      //dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",w_time_total_read"<<","<<op->client_op->get_w_time_real()<<"#"<< dendl;
 
     }else{
-      dout(0)<<"mismatch"<<dendl;
+      //dout(0)<<"mismatch"<<dendl;
     }
   }else{
     dout(0)<<"null client_op"<<dendl;
   }
 
   utime_t w_end_time = ceph_clock_now();
-  dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",w_end"<<","<<w_end_time.to_nsec()<<"#"<< dendl;
+  //dout(0) << "mydebug:rmw_info#"<<op->hoid<<","<<op->tid<<",w_end"<<","<<w_end_time.to_nsec()<<"#"<< dendl;
   waiting_commit.pop_front();
 
   dout(10) << __func__ << ": " << *op << dendl;

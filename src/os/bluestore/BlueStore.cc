@@ -3790,7 +3790,7 @@ BlueStore::BlueStore(CephContext *cct, const string& path)
     kv_finalize_thread(this),
     mempool_thread(this)
 {
-  dout(0)<<"mydebug: 2parameter bluestore_path"<<path<<dendl;
+  //dout(0)<<"mydebug: 2parameter bluestore_path"<<path<<dendl;
   _init_logger();
   cct->_conf->add_observer(this);
   set_cache_shards(1);
@@ -3812,7 +3812,7 @@ BlueStore::BlueStore(CephContext *cct,
     min_alloc_size_order(ctz(_min_alloc_size)),
     mempool_thread(this)
 {
-   dout(0)<<"mydebug: 3parameter bluestore_path"<<path<<dendl;
+   //dout(0)<<"mydebug: 3parameter bluestore_path"<<path<<dendl;
   _init_logger();
   cct->_conf->add_observer(this);
   set_cache_shards(1);
@@ -4478,7 +4478,7 @@ void BlueStore::_set_alloc_sizes(void)
 int BlueStore::_open_bdev(bool create)
 {
   assert(bdev == NULL);
-  dout(0) << "mydebug: in _open_bdev"<< dendl;
+  //dout(0) << "mydebug: in _open_bdev"<< dendl;
   string p = path + "/block";
   bdev = BlockDevice::create(cct, p, aio_cb, static_cast<void*>(this));
   int r = bdev->open(p);
@@ -4502,7 +4502,7 @@ int BlueStore::_open_bdev(bool create)
     goto fail_close;
   }
 
-  dout(0) << "mydebug: out _open_bdev"<< dendl;
+  //dout(0) << "mydebug: out _open_bdev"<< dendl;
   return 0;
 
  fail_close:
@@ -4914,7 +4914,7 @@ void BlueStore::_close_db_and_around()
 
 int BlueStore::_open_db(bool create)
 {
-  dout(0) << "mydebug: in _open_db"<< dendl;
+  //dout(0) << "mydebug: in _open_db"<< dendl;
   int r;
   assert(!db);
   string fn = path + "/db";
@@ -5197,7 +5197,7 @@ int BlueStore::_open_db(bool create)
   }
   dout(1) << __func__ << " opened " << kv_backend
 	  << " path " << fn << " options " << options << dendl;
-  dout(0) << "mydebug: out _open_db"<< dendl;
+  //dout(0) << "mydebug: out _open_db"<< dendl;
   return 0;
 
 free_bluefs:
@@ -5594,7 +5594,7 @@ int BlueStore::_setup_block_symlink_or_file(
 int BlueStore::mkfs()
 {
   dout(1) << __func__ << " path " << path << dendl;//输出路径，应该是工作路径
-  dout(0) <<"mydebug: in mkfs" << path << dendl;
+  //dout(0) <<"mydebug: in mkfs" << path << dendl;
   int r;
   uuid_d old_fsid;
 
@@ -5796,7 +5796,7 @@ int BlueStore::mkfs()
   } else {
     dout(0) << __func__ << " success" << dendl;
   }
-  dout(0) <<"mydebug: out mkfs" << path << dendl;
+  //dout(0) <<"mydebug: out mkfs" << path << dendl;
   return r;
 }
 
@@ -5815,7 +5815,7 @@ void BlueStore::set_cache_shards(unsigned num)
 int BlueStore::_mount(bool kv_only)
 {
   dout(1) << __func__ << " path " << path << dendl;
-  dout(0) << "mydebug: in _mount " << path << dendl;
+  //dout(0) << "mydebug: in _mount " << path << dendl;
 
   _kv_only = kv_only;//这个地方默认是false
 
@@ -5913,7 +5913,7 @@ int BlueStore::_mount(bool kv_only)
 
   mounted = true;
 
-  dout(0) << "mydebug: out _mount " << dendl;
+  //dout(0) << "mydebug: out _mount " << dendl;
   return 0;
 
  out_stop:
@@ -5973,7 +5973,7 @@ int BlueStore::umount()
 
 int BlueStore::cold_open()
 {
-  dout(0)<<"mydebug: in cold open"<<dendl;
+  //dout(0)<<"mydebug: in cold open"<<dendl;
   int r = _open_path();
   if (r < 0)
     return r;
@@ -5996,7 +5996,7 @@ int BlueStore::cold_open()
   if (r < 0) {
     goto out_bdev;
   }
-  dout(0)<<"mydebug: out cold open"<<dendl;
+  //dout(0)<<"mydebug: out cold open"<<dendl;
   return 0;
  out_bdev:
   _close_bdev();
@@ -6072,7 +6072,7 @@ int BlueStore::_fsck_check_extents(
 
 int BlueStore::_fsck(bool deep, bool repair)
 {
-  dout(0)<<"mydebug: in _fsck"<<dendl;
+  //dout(0)<<"mydebug: in _fsck"<<dendl;
   dout(1) << __func__
 	  << (repair ? " fsck" : " repair")
 	  << (deep ? " (deep)" : " (shallow)") << " start" << dendl;
@@ -6701,7 +6701,7 @@ int BlueStore::_fsck(bool deep, bool repair)
   dout(1) << __func__ << " finish with " << errors << " errors, " << repaired
 	  << " repaired, " << (errors - repaired) << " remaining in "
 	  << duration << " seconds" << dendl;
-    dout(0)<<"mydebug: out _fsck"<<dendl;
+    //dout(0)<<"mydebug: out _fsck"<<dendl;
   return errors - repaired;
 }
 
@@ -7229,7 +7229,7 @@ int BlueStore::_do_read(
     }
   }
   if (ioc.has_pending_aios()) {
-    dout(0) <<"mydebug:in _do_read"<< dendl;
+    //dout(0) <<"mydebug:in _do_read"<< dendl;
     bdev->aio_submit(&ioc);
     dout(20) << __func__ << " waiting for aio" << dendl;
     ioc.aio_wait();
@@ -9419,7 +9419,7 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
   }
 
   deferred_lock.unlock();
-  dout(0) <<"mydebug:in _deferred_submit_unlock"<< dendl;
+  //dout(0) <<"mydebug:in _deferred_submit_unlock"<< dendl;
   bdev->aio_submit(&b->ioc);
 }
 
@@ -9556,10 +9556,12 @@ int BlueStore::queue_transactions(
   txc->oncommit = ondisk;
 
   for (vector<Transaction>::iterator p = tls.begin(); p != tls.end(); ++p) {
+    //对于每个transaction设置opsequenser
     (*p).set_osr(osr);
     txc->bytes += (*p).get_num_bytes();
     _txc_add_transaction(txc, &(*p));
   }
+  //计算每个txc的cost？
   _txc_calc_cost(txc);
 
   _txc_write_nodes(txc, txc->t);
@@ -9614,7 +9616,7 @@ int BlueStore::queue_transactions(
 void BlueStore::_txc_aio_submit(TransContext *txc)
 {
   dout(10) << __func__ << " txc " << txc << dendl;
-  dout(0) << "in BlueStore::_txc_aio_submit" << dendl;
+  //dout(0) << "mydebug:in BlueStore::_txc_aio_submit" << dendl;
   bdev->aio_submit(&txc->ioc);
 }
 
@@ -10418,7 +10420,7 @@ void BlueStore::_do_write_big(
   auto max_bsize = MAX(wctx->target_blob_size, min_alloc_size);
   
   while (length > 0) {
-    dout(0) <<"mydebug: in while,length="<<length<< dendl;
+    //dout(0) <<"mydebug: in while,length="<<length<< dendl;
 
     bool new_blob = false;
     uint32_t l = MIN(max_bsize, length);//一次分配不能超过最大的blob大小
@@ -10485,7 +10487,7 @@ void BlueStore::_do_write_big(
 	}
       } while (b == nullptr && any_change);//当没有找到并且还可以找（因为每次指针可以移动的时候，才会把anychange变成true）
     }else{
-      dout(0) <<"mydebug: wctx->compress"<< dendl;
+      //dout(0) <<"mydebug: wctx->compress"<< dendl;
     }
     if (b == nullptr) {
       b = c->new_blob();
@@ -10495,7 +10497,7 @@ void BlueStore::_do_write_big(
 
     
     auto blen = b->get_blob().get_logical_length();//得到逻辑长度
-    dout(0) <<"mydebug:blen="<<blen<<",target_blob_size="<<max_bsize<<",min_allocate_size="<<min_alloc_size<< dendl;
+    //dout(0) <<"mydebug:blen="<<blen<<",target_blob_size="<<max_bsize<<",min_allocate_size="<<min_alloc_size<< dendl;
 
     bufferlist t;
     blp.copy(l, t);
@@ -11144,9 +11146,9 @@ int BlueStore::_write(TransContext *txc,
 		      bufferlist& bl,
 		      uint32_t fadvise_flags)
 {
-  dout(0) << __func__ << " " << c->cid << " " << o->oid
-	   << " 0x" << std::hex << offset << "~" << length << std::dec
-	   << dendl;//change 15->0
+  // dout(0) << __func__ << " " << c->cid << " " << o->oid
+	//    << " 0x" << std::hex << offset << "~" << length << std::dec
+	//    << dendl;//change 15->0
   int r = 0;
   if (offset + length >= OBJECT_MAX_SIZE) {
     r = -E2BIG;

@@ -235,21 +235,21 @@ int main(int argc, const char **argv)
     derr << "must specify '--osd-data=foo' data path" << dendl;
     usage();
   }
-  dout(0) << "mydebug: osd_data path: " <<g_conf->osd_data<< dendl;
+  //dout(0) << "mydebug: osd_data path: " <<g_conf->osd_data<< dendl;
   // the store
-  dout(0) << "mydebug: in the store"<< dendl;
+  //dout(0) << "mydebug: in the store"<< dendl;
 
   for(int i=0;i<my_args.size();i++){
-    dout(0)<<"mydebug: argv "<<my_args[i]<<dendl;
+    //dout(0)<<"mydebug: argv "<<my_args[i]<<dendl;
   }
 
-  dout(0) << "mydebug: num_args="<<num_args<< dendl;
+  //dout(0) << "mydebug: num_args="<<num_args<< dendl;
 
   string store_type = g_conf->osd_objectstore;
   {
     char fn[PATH_MAX];
     snprintf(fn, sizeof(fn), "%s/type", g_conf->osd_data.c_str());
-    dout(0) << "mydebug: fn:"<<fn<< dendl;
+    //dout(0) << "mydebug: fn:"<<fn<< dendl;
     int fd = ::open(fn, O_RDONLY|O_CLOEXEC);
     if (fd >= 0) {
       bufferlist bl;
@@ -301,7 +301,7 @@ int main(int argc, const char **argv)
 	derr << "created new key in keyring " << g_conf->keyring << dendl;
     }
   }
-  dout(0)<<"mydebug: mkfs:"<<mkfs<<dendl;
+  //dout(0)<<"mydebug: mkfs:"<<mkfs<<dendl;
   if (mkfs) {
     common_init_finish(g_ceph_context);
     MonClient mc(g_ceph_context);
@@ -599,9 +599,9 @@ flushjournal_out:
     exit(1);
 
   // Set up crypto, daemonize, etc.
-  dout(0)<<"mydebug: before global_init_daemonize"<<dendl;
+  //dout(0)<<"mydebug: before global_init_daemonize"<<dendl;
   global_init_daemonize(g_ceph_context);
-  dout(0)<<"mydebug: before common_init_finish"<<dendl;
+  //dout(0)<<"mydebug: before common_init_finish"<<dendl;
   common_init_finish(g_ceph_context);
 
   TracepointProvider::initialize<osd_tracepoint_traits>(g_ceph_context);
@@ -634,7 +634,7 @@ flushjournal_out:
                 g_conf->osd_data,
                 g_conf->osd_journal);
 
-  dout(0)<<"mydebug: before osd->pre_init"<<dendl;
+  //dout(0)<<"mydebug: before osd->pre_init"<<dendl;
   int err = osd->pre_init();
   if (err < 0) {
     derr << TEXT_RED << " ** ERROR: osd pre_init failed: " << cpp_strerror(-err)
@@ -651,7 +651,7 @@ flushjournal_out:
   ms_objecter->start();
 
   // start osd
-  dout(0)<<"mydebug: before osd->init"<<dendl;
+  //dout(0)<<"mydebug: before osd->init"<<dendl;
   err = osd->init();
   if (err < 0) {
     derr << TEXT_RED << " ** ERROR: osd init failed: " << cpp_strerror(-err)
@@ -665,14 +665,14 @@ flushjournal_out:
   register_async_signal_handler_oneshot(SIGINT, handle_osd_signal);
   register_async_signal_handler_oneshot(SIGTERM, handle_osd_signal);
 
-  dout(0)<<"mydebug: before osd->final_init"<<dendl;
+  //dout(0)<<"mydebug: before osd->final_init"<<dendl;
   osd->final_init();
 
   if (g_conf->inject_early_sigterm)
     kill(getpid(), SIGTERM);
 
 
-  dout(0)<<"mydebug: before wait"<<dendl;
+  //dout(0)<<"mydebug: before wait"<<dendl;
   ms_public->wait();
   ms_hb_front_client->wait();
   ms_hb_back_client->wait();
@@ -681,13 +681,13 @@ flushjournal_out:
   ms_cluster->wait();
   ms_objecter->wait();
 
-  dout(0)<<"mydebug: before unregister"<<dendl;
+  //dout(0)<<"mydebug: before unregister"<<dendl;
   unregister_async_signal_handler(SIGHUP, sighup_handler);
   unregister_async_signal_handler(SIGINT, handle_osd_signal);
   unregister_async_signal_handler(SIGTERM, handle_osd_signal);
   shutdown_async_signal_handler();
 
-  dout(0)<<"mydebug: before delete"<<dendl;
+  //dout(0)<<"mydebug: before delete"<<dendl;
   // done
   delete osd;
   delete ms_public;

@@ -3449,12 +3449,12 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
 	reply->add_flags(CEPH_OSD_FLAG_ACK | CEPH_OSD_FLAG_ONDISK);
 	dout(10) << " sending reply on " << *m << " " << reply << dendl;
   utime_t w_sent_time = ceph_clock_now();
-  dout(0) << "mydebug:rmw_info#"<<ctx->obc->obs.oi.soid<<","<<rep_tid<<",w_sent"<<","<<w_sent_time.to_nsec()<<"#"<< dendl;
+  //dout(0) << "mydebug:rmw_info#"<<ctx->obc->obs.oi.soid<<","<<rep_tid<<",w_sent"<<","<<w_sent_time.to_nsec()<<"#"<< dendl;
 	
   osd->send_message_osd_client(reply, m->get_connection());
 	ctx->sent_reply = true;
 	ctx->op->mark_commit_sent();
-  dout(0) << "mydebug:rmw_info#"<<ctx->obc->obs.oi.soid<<","<<rep_tid<<",op_total"<<","<<ctx->op->get_total_time()<<"#"<< dendl;
+  //dout(0) << "mydebug:rmw_info#"<<ctx->obc->obs.oi.soid<<","<<rep_tid<<",op_total"<<","<<ctx->op->get_total_time()<<"#"<< dendl;
   //dout(0) << "mydebug:rmw_info#"<<ctx->obc->obs.oi.soid<<","<<rep_tid<<",w_total"<<","<<ctx->op->get_total_time()<<"#"<< dendl;
   //dout(0) << "mydebug:rmw_info#"<<ctx->obc->obs.oi.soid<<","<<rep_tid<<",r_time_total"<<","<<ctx->op->get_r_time()<<"#"<< dendl;
   //dout(0) << "mydebug:rmw_info#"<<ctx->obc->obs.oi.soid<<","<<rep_tid<<",w_time_total"<<","<<ctx->op->get_w_time()<<"#"<< dendl;
@@ -5965,7 +5965,7 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	    t->nop(soid);
 	  }
 	} else {
-    dout(0) << "mydebug:#id="<<soid<<",offset="<< op.extent.offset<<",length="<<op.extent.length<<"#"<< dendl;
+    //dout(0) << "mydebug:#id="<<soid<<",offset="<< op.extent.offset<<",length="<<op.extent.length<<"#"<< dendl;
 	  t->write(
 	    soid, op.extent.offset, op.extent.length, osd_op.indata, op.flags);
 	}
@@ -9443,7 +9443,7 @@ void PrimaryLogPG::eval_repop(RepGather *repop)
   // ondisk?
   if (repop->all_committed) {
     dout(10) << " commit: " << *repop << dendl;
-    dout(10) << "mydebug: all committed: "<< dendl;
+    //dout(10) << "mydebug: all committed: "<< dendl;
     for (auto p = repop->on_committed.begin();
 	 p != repop->on_committed.end();
 	 repop->on_committed.erase(p++)) {

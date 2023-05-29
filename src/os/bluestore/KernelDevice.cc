@@ -515,7 +515,7 @@ void KernelDevice::aio_submit(IOContext *ioc)
   //dout(0) << "mydebug: in aio_submit" << dendl;
 
   if (ioc->num_pending.load() == 0) {
-    dout(0) << "mydebug: in aio_submit, no load, return" << dendl;
+    //dout(0) << "mydebug: in aio_submit, no load, return" << dendl;
     return;
   }
 
@@ -556,7 +556,7 @@ void KernelDevice::aio_submit(IOContext *ioc)
 
 int KernelDevice::_sync_write(uint64_t off, bufferlist &bl, bool buffered)
 {
-  dout(0) << "mydebug: in _sync_write"<< dendl;
+  //dout(0) << "mydebug: in _sync_write"<< dendl;
   uint64_t len = bl.length();
   dout(5) << __func__ << " 0x" << std::hex << off << "~" << len
 	  << std::dec << " buffered" << dendl;
