@@ -17,6 +17,7 @@
 #include <libgen.h>
 #include <unistd.h>
 
+#include "MemDevice.h"
 #include "KernelDevice.h"
 #if defined(HAVE_SPDK)
 #include "NVMEDevice.h"
@@ -84,6 +85,9 @@ BlockDevice *BlockDevice::create(CephContext* cct, const string& path,
 #endif
 
   if (type == "kernel") {
+    if(path.find("wal")!=string::npos || path.find("db")!=string::npos){
+      return new MemDevice(cct, cb, cbpriv);
+    }
     return new KernelDevice(cct, cb, cbpriv);
   }
 #if defined(HAVE_SPDK)

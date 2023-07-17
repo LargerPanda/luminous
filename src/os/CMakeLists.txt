@@ -32,6 +32,7 @@ if(HAVE_LIBAIO)
     bluestore/fastbmap_allocator_impl.cc
     bluestore/FreelistManager.cc
     bluestore/KernelDevice.cc
+    bluestore/MemDevice.cc
     bluestore/StupidAllocator.cc
     bluestore/BitmapAllocator.cc
     bluestore/aio.cc
