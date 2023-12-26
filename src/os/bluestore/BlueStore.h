@@ -697,11 +697,11 @@ public:
       return a.logical_offset == b.logical_offset;
     }
 
-    uint32_t blob_start() const {
+    uint32_t blob_start() const {//所在blob的起始位置的逻辑地址
       return logical_offset - blob_offset;
     }
 
-    uint32_t blob_end() const {
+    uint32_t blob_end() const {//所在blob的结束位置的逻辑地址
       return blob_start() + blob->get_blob().get_logical_length();
     }
 
