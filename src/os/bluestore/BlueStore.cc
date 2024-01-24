@@ -2892,7 +2892,7 @@ void BlueStore::ExtentMap::punch_hole(
 	// split and deref middle
 	uint64_t front = offset - p->logical_offset;//offset的前面有多少
 	OldExtent* oe = OldExtent::create(c, offset, p->blob_offset + front, 
-					  length, p->blob);//这个创建的应该是新的lextent
+					  length, p->blob);//把中间那段设置为旧的
   //这个create的入口参数是collection，写入块的偏移，p将要被覆盖的起点在blob中的便宜，将要写入的长度，p对应的blob
 	old_extents->push_back(*oe);
 	add(end,//逻辑结束位置，也是留下块的逻辑开始位置
@@ -2901,7 +2901,7 @@ void BlueStore::ExtentMap::punch_hole(
 	    p->blob);//p的blob
   //这个add的作用应该是把这个尾部作为新的extent加入blob
 	p->length = front;//这个p的长度被定为了front，也就是说旧的lextent只留下了前面的
-	break;//需要写的区域包含在p里面，这种情况处理完了，相当于分割成了三块，新的加入了old_extents，旧的分成两半
+	break;//需要写的区域包含在p里面，这种情况处理完了，相当于原来的被分割成了两块，但是中间的目前还是空着的
       } else {//这种情况需要写的区域的尾部超过的原始 p的end
 	// deref tail
 	assert(p->logical_end() > offset); // else seek_lextent bug
@@ -2920,7 +2920,7 @@ void BlueStore::ExtentMap::punch_hole(
       OldExtent* oe = OldExtent::create(c, p->logical_offset, p->blob_offset,
 				        p->length, p->blob);
       old_extents->push_back(*oe);
-      rm(p++);//直接把该p删掉了了
+      rm(p++);//直接把该p删掉了了，同时++，可能会覆盖多个lextent
       continue;
     }
     // deref head
@@ -2931,7 +2931,8 @@ void BlueStore::ExtentMap::punch_hole(
     old_extents->push_back(*oe);
 
     add(end, p->blob_offset + p->length - keep, keep, p->blob);
-    rm(p);//add完之后把p删了，因为前面那部分都不要了，所以直接把p删了，前面的不删是因为p的前部还有一些
+    rm(p);//add完之后把p删了，因为前面那部分都不要了，所以直接把p删了，前面的不删是因为p的前部还有一些，直接改变长度更方便点，实际上
+          //实际上也是可以先删再add的
     break;
   }
 }
@@ -10063,7 +10064,7 @@ void BlueStore::_do_write_small(
   
   //断定长度一定是小于min_alloc_size的
   assert(length < min_alloc_size);
-  //结尾的便宜等于offset+length
+  //结尾的偏移等于offset+length
   uint64_t end_offs = offset + length;
 
   logger->inc(l_bluestore_write_small);
@@ -10501,8 +10502,8 @@ void BlueStore::_do_write_big(
 	   << dendl;
   logger->inc(l_bluestore_write_big);
   logger->inc(l_bluestore_write_big_bytes, length);
-  //改动的
-  o->extent_map.punch_hole(c, offset, length, &wctx->old_extents);//这一步就是把原来的lextent给重新安排一下，该切割的切割，该覆盖的覆盖
+  //改动的，把puchhole先删掉
+  //o->extent_map.punch_hole(c, offset, length, &wctx->old_extents);//这一步就是把原来的lextent给重新安排一下，该切割的切割，该覆盖的覆盖
   //接下来只要把这整块当做新的lextent写入就行了
 
   dout(0) <<"mydebug: target_blob_size = "<<wctx->target_blob_size<< dendl;
@@ -10519,10 +10520,11 @@ void BlueStore::_do_write_big(
     //attempting to reuse existing blob
     if (!wctx->compress) {
       // look for an existing mutable blob we can reuse
+      //之前的puch只是对lextent进行分割，现在开始找具体放到哪个blob中
       //前面一个extent map是一个大机构，后面的extent_map是具体维护extent到blob映射的结构
       auto begin = o->extent_map.extent_map.begin();
       auto end = o->extent_map.extent_map.end();
-      auto ep = o->extent_map.seek_lextent(offset);//因为之前punch过了，这边只会返回会面的第一个lextent了，这里从ep向后找
+      auto ep = o->extent_map.seek_lextent(offset);//因为之前punch过了，这边只会返回后面的第一个lextent了，这里从ep向后找
       auto prev_ep = ep;
       if (prev_ep != begin) {
         --prev_ep;//如果不是开始的话，就往前一个，从prev_ep向前找
@@ -10584,6 +10586,7 @@ void BlueStore::_do_write_big(
       b = c->new_blob();
       b_off = 0;
       new_blob = true;
+      dout(0) <<"length="<<l<<" write to a new blob"<< dendl;
     }
 
     
@@ -10594,45 +10597,82 @@ void BlueStore::_do_write_big(
     blp.copy(l, t);
 
     /****改动的******/
-    // bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
-	  // op->op = bluestore_deferred_op_t::OP_WRITE;
-    // //先写cache
-	  // _buffer_cache_write(txc, b, b_off, t,
-		// 	      wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
+    if(new_blob==true){
+      //这个地方puchhole的length改成了l，性能好像有点下降(10MB)，但是可以运行
+      o->extent_map.punch_hole(c, offset, l, &wctx->old_extents);
 
-	  // int r = b->get_blob().map(
-	  //   b_off, l,
-	  //   [&](uint64_t offset, uint64_t length) {
-	  //     op->extents.emplace_back(bluestore_pextent_t(offset, length));
-	  //     return 0;
-	  //   });
-	  // assert(r == 0);
-	  // if (b->get_blob().csum_type) {
-	  //   b->dirty_blob().calc_csum(b_off, t);
-	  // }
-	  // op->data.claim(t);//这边和前面有点不一样，是先删除，再替换，前面是直接=指向，因为后面用不到了？
+      // if(b->get_blob().get_extents().empty()){
+      //   dout(0) <<"mydebug: empty extentsVector"<< dendl;
+      // }
+      
+      bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
+      op->op = bluestore_deferred_op_t::OP_WRITE;
+      //先写cache
+      _buffer_cache_write(txc, b, b_off, t,
+              wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
 
-	  // dout(20) << __func__ << "  deferred write 0x" << std::hex << b_off << "~"
-		//    << l << std::dec << " of mutable " << *b
-		//    << " at " << op->extents << dendl;
-    // //和前面一样，改动lextent
-	  // Extent *le = o->extent_map.set_lextent(c, offset, b_off, length,
-		// 				 b, &wctx->old_extents);
-	  // b->dirty_blob().mark_used(le->blob_offset, le->length);
-	  // //txc->statfs_delta.stored() += le->length;
-	  // //dout(20) << __func__ << "  lex " << *le << dendl;
-	  // //logger->inc(l_bluestore_write_small_deferred);
-    // offset += l;
-    // length -= l;
+      int r = b->get_blob().map(
+        b_off, l,
+        [&](uint64_t offset, uint64_t length) {
+          op->extents.emplace_back(bluestore_pextent_t(offset, length));
+          return 0;
+        });
+      assert(r == 0);
+      if (b->get_blob().csum_type) {
+        b->dirty_blob().calc_csum(b_off, t);
+      }
+      op->data.claim(t);//这边和前面有点不一样，是先删除，再替换，前面是直接=指向，因为后面用不到了？
+
+      dout(20) << __func__ << "  deferred write 0x" << std::hex << b_off << "~"
+        << l << std::dec << " of mutable " << *b
+        << " at " << op->extents << dendl;
+      //前面已经puchhole了，就不需要set_lextent了？
+      // Extent *le = o->extent_map.set_lextent(c, offset, b_off, length,
+      //         b, &wctx->old_extents);
+      //b->dirty_blob().mark_used(le->blob_offset, le->length);
+      b->dirty_blob().mark_used(b_off, l);
+      txc->statfs_delta.stored() += l;
+      //wctx->write(offset, b, l, b_off, t, b_off, l, false, new_blob);
+    }else{
+      dout(0) <<"defer write in big write"<< dendl;
+      bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
+      op->op = bluestore_deferred_op_t::OP_WRITE;
+      //先写cache
+      _buffer_cache_write(txc, b, b_off, t,
+              wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
+
+      int r = b->get_blob().map(
+        b_off, l,
+        [&](uint64_t offset, uint64_t length) {
+          op->extents.emplace_back(bluestore_pextent_t(offset, length));
+          return 0;
+        });
+      assert(r == 0);
+      if (b->get_blob().csum_type) {
+        b->dirty_blob().calc_csum(b_off, t);
+      }
+      op->data.claim(t);//这边和前面有点不一样，是先删除，再替换，前面是直接=指向，因为后面用不到了？
+
+      dout(20) << __func__ << "  deferred write 0x" << std::hex << b_off << "~"
+        << l << std::dec << " of mutable " << *b
+        << " at " << op->extents << dendl;
+      //和前面一样，改动lextent
+      Extent *le = o->extent_map.set_lextent(c, offset, b_off, length,
+              b, &wctx->old_extents);
+      b->dirty_blob().mark_used(le->blob_offset, le->length);
+      txc->statfs_delta.stored() += le->length;
+      //dout(20) << __func__ << "  lex " << *le << dendl;
+      //logger->inc(l_bluestore_write_small_deferred);
+    }
+    offset += l;
+    length -= l;
     /****改动的******/
 
     /****原来的****/
-    wctx->write(offset, b, l, b_off, t, b_off, l, false, new_blob);
-    //write(当前offset，目标blob，长度，目标blob的offset，内容buffer，目标blob的offset，长度，_mark_unused，是否是新的blob)
-    //wctx->write(offset, b, alloc_len, b_off0, bl, b_off, length, true, true);
-    offset += l;//这边的感觉是把这部分从offset开始进行分割
-    length -= l;
-    logger->inc(l_bluestore_write_big_blobs);
+    // wctx->write(offset, b, l, b_off, t, b_off, l, false, new_blob);
+    // offset += l;//这边的感觉是把这部分从offset开始进行分割
+    // length -= l;
+    // logger->inc(l_bluestore_write_big_blobs);
     /****原来的****/
   }
 }
