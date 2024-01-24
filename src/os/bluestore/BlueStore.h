@@ -2637,8 +2637,12 @@ private:
       bufferlist compressed_bl;
       size_t compressed_len = 0;
 
+      //标识大小写
+      bool big_write=false;
+      bool small_write=false;
+
       write_item(
-	uint64_t logical_offs,
+	      uint64_t logical_offs,
         BlobRef b,
         uint64_t blob_len,
         uint64_t o,
@@ -2646,7 +2650,7 @@ private:
         uint64_t o0,
         uint64_t l0,
         bool _mark_unused,
-	bool _new_blob)
+	      bool _new_blob)
        :
          logical_offset(logical_offs),
          b(b),
@@ -2656,7 +2660,7 @@ private:
          b_off0(o0),
          length0(l0),
          mark_unused(_mark_unused),
-	 new_blob(_new_blob) {}
+	       new_blob(_new_blob) {}
     };
     vector<write_item> writes;                 ///< blobs we're writing
 
@@ -2686,6 +2690,29 @@ private:
                           len0,
                           _mark_unused,
                           _new_blob);
+    }
+
+    void write_big(
+      uint64_t loffs,
+      BlobRef b,
+      uint64_t blob_len,
+      uint64_t o,
+      bufferlist& bl,
+      uint64_t o0,
+      uint64_t len0,
+      bool _mark_unused,
+      bool _new_blob) {
+      write_item temp_item(loffs,
+                           b,
+                           blob_len,
+                           o,
+                           bl,
+                           o0,
+                           len0,
+                           _mark_unused,
+                           _new_blob);
+      temp_item.big_write=true;
+      writes.emplace_back(temp_item);
     }
     /// Checks for writes to the same pextent within a blob
     bool has_conflict(

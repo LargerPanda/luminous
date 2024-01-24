@@ -10503,7 +10503,7 @@ void BlueStore::_do_write_big(
   logger->inc(l_bluestore_write_big);
   logger->inc(l_bluestore_write_big_bytes, length);
   //改动的，把puchhole先删掉
-  //o->extent_map.punch_hole(c, offset, length, &wctx->old_extents);//这一步就是把原来的lextent给重新安排一下，该切割的切割，该覆盖的覆盖
+  o->extent_map.punch_hole(c, offset, length, &wctx->old_extents);//这一步就是把原来的lextent给重新安排一下，该切割的切割，该覆盖的覆盖
   //接下来只要把这整块当做新的lextent写入就行了
 
   dout(0) <<"mydebug: target_blob_size = "<<wctx->target_blob_size<< dendl;
@@ -10597,82 +10597,82 @@ void BlueStore::_do_write_big(
     blp.copy(l, t);
 
     /****改动的******/
-    if(new_blob==true){
-      //这个地方puchhole的length改成了l，性能好像有点下降(10MB)，但是可以运行
-      o->extent_map.punch_hole(c, offset, l, &wctx->old_extents);
+    // if(new_blob==true){
+    //   //这个地方puchhole的length改成了l，性能好像有点下降(10MB)，但是可以运行
+    //   o->extent_map.punch_hole(c, offset, l, &wctx->old_extents);
 
-      // if(b->get_blob().get_extents().empty()){
-      //   dout(0) <<"mydebug: empty extentsVector"<< dendl;
-      // }
+    //   // if(b->get_blob().get_extents().empty()){
+    //   //   dout(0) <<"mydebug: empty extentsVector"<< dendl;
+    //   // }
       
-      bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
-      op->op = bluestore_deferred_op_t::OP_WRITE;
-      //先写cache
-      _buffer_cache_write(txc, b, b_off, t,
-              wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
+    //   bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
+    //   op->op = bluestore_deferred_op_t::OP_WRITE;
+    //   //先写cache
+    //   _buffer_cache_write(txc, b, b_off, t,
+    //           wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
 
-      int r = b->get_blob().map(
-        b_off, l,
-        [&](uint64_t offset, uint64_t length) {
-          op->extents.emplace_back(bluestore_pextent_t(offset, length));
-          return 0;
-        });
-      assert(r == 0);
-      if (b->get_blob().csum_type) {
-        b->dirty_blob().calc_csum(b_off, t);
-      }
-      op->data.claim(t);//这边和前面有点不一样，是先删除，再替换，前面是直接=指向，因为后面用不到了？
+    //   int r = b->get_blob().map(
+    //     b_off, l,
+    //     [&](uint64_t offset, uint64_t length) {
+    //       op->extents.emplace_back(bluestore_pextent_t(offset, length));
+    //       return 0;
+    //     });
+    //   assert(r == 0);
+    //   if (b->get_blob().csum_type) {
+    //     b->dirty_blob().calc_csum(b_off, t);
+    //   }
+    //   op->data.claim(t);//这边和前面有点不一样，是先删除，再替换，前面是直接=指向，因为后面用不到了？
 
-      dout(20) << __func__ << "  deferred write 0x" << std::hex << b_off << "~"
-        << l << std::dec << " of mutable " << *b
-        << " at " << op->extents << dendl;
-      //前面已经puchhole了，就不需要set_lextent了？
-      // Extent *le = o->extent_map.set_lextent(c, offset, b_off, length,
-      //         b, &wctx->old_extents);
-      //b->dirty_blob().mark_used(le->blob_offset, le->length);
-      b->dirty_blob().mark_used(b_off, l);
-      txc->statfs_delta.stored() += l;
-      //wctx->write(offset, b, l, b_off, t, b_off, l, false, new_blob);
-    }else{
-      dout(0) <<"defer write in big write"<< dendl;
-      bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
-      op->op = bluestore_deferred_op_t::OP_WRITE;
-      //先写cache
-      _buffer_cache_write(txc, b, b_off, t,
-              wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
+    //   dout(20) << __func__ << "  deferred write 0x" << std::hex << b_off << "~"
+    //     << l << std::dec << " of mutable " << *b
+    //     << " at " << op->extents << dendl;
+    //   //前面已经puchhole了，就不需要set_lextent了？
+    //   // Extent *le = o->extent_map.set_lextent(c, offset, b_off, length,
+    //   //         b, &wctx->old_extents);
+    //   //b->dirty_blob().mark_used(le->blob_offset, le->length);
+    //   b->dirty_blob().mark_used(b_off, l);
+    //   txc->statfs_delta.stored() += l;
+    //   //wctx->write(offset, b, l, b_off, t, b_off, l, false, new_blob);
+    // }else{
+    //   dout(0) <<"defer write in big write"<< dendl;
+    //   bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
+    //   op->op = bluestore_deferred_op_t::OP_WRITE;
+    //   //先写cache
+    //   _buffer_cache_write(txc, b, b_off, t,
+    //           wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
 
-      int r = b->get_blob().map(
-        b_off, l,
-        [&](uint64_t offset, uint64_t length) {
-          op->extents.emplace_back(bluestore_pextent_t(offset, length));
-          return 0;
-        });
-      assert(r == 0);
-      if (b->get_blob().csum_type) {
-        b->dirty_blob().calc_csum(b_off, t);
-      }
-      op->data.claim(t);//这边和前面有点不一样，是先删除，再替换，前面是直接=指向，因为后面用不到了？
+    //   int r = b->get_blob().map(
+    //     b_off, l,
+    //     [&](uint64_t offset, uint64_t length) {
+    //       op->extents.emplace_back(bluestore_pextent_t(offset, length));
+    //       return 0;
+    //     });
+    //   assert(r == 0);
+    //   if (b->get_blob().csum_type) {
+    //     b->dirty_blob().calc_csum(b_off, t);
+    //   }
+    //   op->data.claim(t);//这边和前面有点不一样，是先删除，再替换，前面是直接=指向，因为后面用不到了？
 
-      dout(20) << __func__ << "  deferred write 0x" << std::hex << b_off << "~"
-        << l << std::dec << " of mutable " << *b
-        << " at " << op->extents << dendl;
-      //和前面一样，改动lextent
-      Extent *le = o->extent_map.set_lextent(c, offset, b_off, length,
-              b, &wctx->old_extents);
-      b->dirty_blob().mark_used(le->blob_offset, le->length);
-      txc->statfs_delta.stored() += le->length;
-      //dout(20) << __func__ << "  lex " << *le << dendl;
-      //logger->inc(l_bluestore_write_small_deferred);
-    }
-    offset += l;
-    length -= l;
+    //   dout(20) << __func__ << "  deferred write 0x" << std::hex << b_off << "~"
+    //     << l << std::dec << " of mutable " << *b
+    //     << " at " << op->extents << dendl;
+    //   //和前面一样，改动lextent
+    //   Extent *le = o->extent_map.set_lextent(c, offset, b_off, length,
+    //           b, &wctx->old_extents);
+    //   b->dirty_blob().mark_used(le->blob_offset, le->length);
+    //   txc->statfs_delta.stored() += le->length;
+    //   //dout(20) << __func__ << "  lex " << *le << dendl;
+    //   //logger->inc(l_bluestore_write_small_deferred);
+    // }
+    // offset += l;
+    // length -= l;
     /****改动的******/
 
     /****原来的****/
-    // wctx->write(offset, b, l, b_off, t, b_off, l, false, new_blob);
-    // offset += l;//这边的感觉是把这部分从offset开始进行分割
-    // length -= l;
-    // logger->inc(l_bluestore_write_big_blobs);
+    wctx->write_big(offset, b, l, b_off, t, b_off, l, false, new_blob);
+    offset += l;//这边的感觉是把这部分从offset开始进行分割
+    length -= l;
+    logger->inc(l_bluestore_write_big_blobs);
     /****原来的****/
   }
 }
@@ -10759,56 +10759,56 @@ int BlueStore::_do_alloc_write(
       // that doesn't take header overhead  into account
       uint64_t result_len = P2ROUNDUP(compressed_len, min_alloc_size);
       if (r == 0 && result_len <= want_len && result_len < wi.blob_length) {
-	bluestore_compression_header_t chdr;
-	chdr.type = c->get_type();
-	chdr.length = t.length();
-	encode(chdr, wi.compressed_bl);
-	wi.compressed_bl.claim_append(t);
+        bluestore_compression_header_t chdr;
+        chdr.type = c->get_type();
+        chdr.length = t.length();
+        encode(chdr, wi.compressed_bl);
+        wi.compressed_bl.claim_append(t);
 
-	compressed_len = wi.compressed_bl.length();
-	result_len = P2ROUNDUP(compressed_len, min_alloc_size);
-	if (result_len <= want_len && result_len < wi.blob_length) {
-	  // Cool. We compressed at least as much as we were hoping to.
-	  // pad out to min_alloc_size
-	  wi.compressed_bl.append_zero(result_len - compressed_len);
-	  wi.compressed_len = compressed_len;
-	  wi.compressed = true;
-	  logger->inc(l_bluestore_write_pad_bytes, result_len - compressed_len);
-	  dout(20) << __func__ << std::hex << "  compressed 0x" << wi.blob_length
-		   << " -> 0x" << compressed_len << " => 0x" << result_len
-		   << " with " << c->get_type()
-		   << std::dec << dendl;
-	  txc->statfs_delta.compressed() += compressed_len;
-	  txc->statfs_delta.compressed_original() += wi.blob_length;
-	  txc->statfs_delta.compressed_allocated() += result_len;
-	  logger->inc(l_bluestore_compress_success_count);
-	  need += result_len;
-	} else {
-	  rejected = true;
-	}
+        compressed_len = wi.compressed_bl.length();
+        result_len = P2ROUNDUP(compressed_len, min_alloc_size);
+        if (result_len <= want_len && result_len < wi.blob_length) {
+          // Cool. We compressed at least as much as we were hoping to.
+          // pad out to min_alloc_size
+          wi.compressed_bl.append_zero(result_len - compressed_len);
+          wi.compressed_len = compressed_len;
+          wi.compressed = true;
+          logger->inc(l_bluestore_write_pad_bytes, result_len - compressed_len);
+          dout(20) << __func__ << std::hex << "  compressed 0x" << wi.blob_length
+            << " -> 0x" << compressed_len << " => 0x" << result_len
+            << " with " << c->get_type()
+            << std::dec << dendl;
+          txc->statfs_delta.compressed() += compressed_len;
+          txc->statfs_delta.compressed_original() += wi.blob_length;
+          txc->statfs_delta.compressed_allocated() += result_len;
+          logger->inc(l_bluestore_compress_success_count);
+          need += result_len;
+        } else {
+          rejected = true;
+        }
       } else if (r != 0) {
-	dout(5) << __func__ << std::hex << "  0x" << wi.blob_length
-		 << " bytes compressed using " << c->get_type_name()
-		 << std::dec
-		 << " failed with errcode = " << r
-		 << ", leaving uncompressed"
-		 << dendl;
-	logger->inc(l_bluestore_compress_rejected_count);
-	need += wi.blob_length;
+        dout(5) << __func__ << std::hex << "  0x" << wi.blob_length
+          << " bytes compressed using " << c->get_type_name()
+          << std::dec
+          << " failed with errcode = " << r
+          << ", leaving uncompressed"
+          << dendl;
+        logger->inc(l_bluestore_compress_rejected_count);
+        need += wi.blob_length;
       } else {
-	rejected = true;
+        rejected = true;
       }
 
       if (rejected) {
-	dout(20) << __func__ << std::hex << "  0x" << wi.blob_length
-		 << " compressed to 0x" << compressed_len << " -> 0x" << result_len
-		 << " with " << c->get_type()
-		 << ", which is more than required 0x" << want_len_raw
-		 << " -> 0x" << want_len
-		 << ", leaving uncompressed"
-		 << std::dec << dendl;
-	logger->inc(l_bluestore_compress_rejected_count);
-	need += wi.blob_length;
+        dout(20) << __func__ << std::hex << "  0x" << wi.blob_length
+          << " compressed to 0x" << compressed_len << " -> 0x" << result_len
+          << " with " << c->get_type()
+          << ", which is more than required 0x" << want_len_raw
+          << " -> 0x" << want_len
+          << ", leaving uncompressed"
+          << std::dec << dendl;
+        logger->inc(l_bluestore_compress_rejected_count);
+        need += wi.blob_length;
       }
       logger->tinc(l_bluestore_compress_lat,
 		   ceph_clock_now() - start);
@@ -10936,25 +10936,27 @@ int BlueStore::_do_alloc_write(
 
     // queue io
     if (!g_conf->bluestore_debug_omit_block_device_write) {
-      if (l->length() <= prefer_deferred_size.load()) {
-	dout(20) << __func__ << " deferring small 0x" << std::hex
-		 << l->length() << std::dec << " write via deferred" << dendl;
-	bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
-	op->op = bluestore_deferred_op_t::OP_WRITE;
-	int r = b->get_blob().map(
-	  b_off, l->length(),
-	  [&](uint64_t offset, uint64_t length) {
-	    op->extents.emplace_back(bluestore_pextent_t(offset, length));
-	    return 0;
-	  });
-        assert(r == 0);
-	op->data = *l;
+      //if (l->length() <= prefer_deferred_size.load()||wi.big_write==true) {
+      if (l->length() <= prefer_deferred_size.load()) { 
+        dout(0) <<"deffer_big_write"<< dendl;
+        dout(20) << __func__ << " deferring small 0x" << std::hex
+          << l->length() << std::dec << " write via deferred" << dendl;
+        bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
+        op->op = bluestore_deferred_op_t::OP_WRITE;
+        int r = b->get_blob().map(
+          b_off, l->length(),
+          [&](uint64_t offset, uint64_t length) {
+            op->extents.emplace_back(bluestore_pextent_t(offset, length));
+            return 0;
+          });
+              assert(r == 0);
+        op->data = *l;
       } else {
-	b->get_blob().map_bl(
-	  b_off, *l,
-	  [&](uint64_t offset, bufferlist& t) {
-	    bdev->aio_write(offset, t, &txc->ioc, false);
-	  });
+        b->get_blob().map_bl(
+          b_off, *l,
+          [&](uint64_t offset, bufferlist& t) {
+            bdev->aio_write(offset, t, &txc->ioc, false);
+          });
       }
     }
   }

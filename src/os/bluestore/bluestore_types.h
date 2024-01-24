@@ -700,27 +700,23 @@ public:
 template<class F>
   int map(uint64_t x_off, uint64_t x_len, F&& f) const {
     auto p = extents.begin();
-    //assert(p != extents.end());
-    if(p!=extents.end()){//原来的逻辑
-      while (x_off >= p->length) {
-        x_off -= p->length;
-        ++p;
-        assert(p != extents.end());
-      }
-      while (x_len > 0) {
-        assert(p != extents.end());
-        uint64_t l = MIN(p->length - x_off, x_len);
-        int r = f(p->offset + x_off, l);
-        if (r < 0)
-          return r;
-        x_off = 0;
-        x_len -= l;
-        ++p;
-      }
-      return 0;
-    }else{//新增：如果extents是空的
-
+    assert(p != extents.end());
+    while (x_off >= p->length) {
+      x_off -= p->length;
+      ++p;
+      assert(p != extents.end());
     }
+    while (x_len > 0) {
+      assert(p != extents.end());
+      uint64_t l = MIN(p->length - x_off, x_len);
+      int r = f(p->offset + x_off, l);
+      if (r < 0)
+        return r;
+      x_off = 0;
+      x_len -= l;
+      ++p;
+    }
+    return 0;
     
   }
 
