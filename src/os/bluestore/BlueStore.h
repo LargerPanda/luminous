@@ -1560,6 +1560,9 @@ public:
       last_stamp = now;
     }
 
+
+    //增加一个op类型
+    int op_id=0;
     OpSequencerRef osr;
     boost::intrusive::list_member_hook<> sequencer_item;
 

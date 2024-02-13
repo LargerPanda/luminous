@@ -8434,67 +8434,76 @@ void BlueStore::_txc_state_proc(TransContext *txc)
     dout(10) << __func__ << " txc " << txc
 	     << " " << txc->get_state_name() << dendl;
     switch (txc->state) {
-    case TransContext::STATE_PREPARE:
-      txc->log_state_latency(logger, l_bluestore_state_prepare_lat);
-      if (txc->ioc.has_pending_aios()) {
-	txc->state = TransContext::STATE_AIO_WAIT;
-	txc->had_ios = true;
-	_txc_aio_submit(txc);
-	return;
-      }
+      case TransContext::STATE_PREPARE:
+        dout(0) <<"mydebug: in STATE_PREPARE" << dendl;
+        txc->log_state_latency(logger, l_bluestore_state_prepare_lat);
+        if (txc->ioc.has_pending_aios()) {
+          dout(0) <<"mydebug: submit pending_aios" << dendl;
+          txc->state = TransContext::STATE_AIO_WAIT;
+          txc->had_ios = true;
+          _txc_aio_submit(txc);
+          return;
+        }
       // ** fall-thru **
 
     case TransContext::STATE_AIO_WAIT:
+      dout(0) <<"mydebug: in STATE_AIO_WAIT" << dendl;
       txc->log_state_latency(logger, l_bluestore_state_aio_wait_lat);
       _txc_finish_io(txc);  // may trigger blocked txc's too
       return;
 
     case TransContext::STATE_IO_DONE:
+       dout(0) <<"mydebug: in STATE_AIO_DONE" << dendl;
       //assert(txc->osr->qlock.is_locked());  // see _txc_finish_io
       if (txc->had_ios) {
-	++txc->osr->txc_with_unstable_io;
+	      ++txc->osr->txc_with_unstable_io;
       }
       txc->log_state_latency(logger, l_bluestore_state_io_done_lat);
       txc->state = TransContext::STATE_KV_QUEUED;
       if (cct->_conf->bluestore_sync_submit_transaction) {
-	if (txc->last_nid >= nid_max ||
-	    txc->last_blobid >= blobid_max) {
-	  dout(20) << __func__
-		   << " last_{nid,blobid} exceeds max, submit via kv thread"
-		   << dendl;
-	} else if (txc->osr->kv_committing_serially) {
-	  dout(20) << __func__ << " prior txc submitted via kv thread, us too"
-		   << dendl;
-	  // note: this is starvation-prone.  once we have a txc in a busy
-	  // sequencer that is committing serially it is possible to keep
-	  // submitting new transactions fast enough that we get stuck doing
-	  // so.  the alternative is to block here... fixme?
-	} else if (txc->osr->txc_with_unstable_io) {
-	  dout(20) << __func__ << " prior txc(s) with unstable ios "
-		   << txc->osr->txc_with_unstable_io.load() << dendl;
-	} else if (cct->_conf->bluestore_debug_randomize_serial_transaction &&
-		   rand() % cct->_conf->bluestore_debug_randomize_serial_transaction
-		   == 0) {
-	  dout(20) << __func__ << " DEBUG randomly forcing submit via kv thread"
-		   << dendl;
-	} else {
-	  int r = cct->_conf->bluestore_debug_omit_kv_commit ? 0 : db->submit_transaction(txc->t);
-	  assert(r == 0);
-	  txc->state = TransContext::STATE_KV_SUBMITTED;
-	  _txc_applied_kv(txc);
-	}
+        dout(0) <<"mydebug: in bluestore_sync_submit_transaction" << dendl;
+        if (txc->last_nid >= nid_max ||
+            txc->last_blobid >= blobid_max) {
+          dout(20) << __func__
+            << " last_{nid,blobid} exceeds max, submit via kv thread"
+            << dendl;
+        } else if (txc->osr->kv_committing_serially) {
+          dout(20) << __func__ << " prior txc submitted via kv thread, us too"
+            << dendl;
+          // note: this is starvation-prone.  once we have a txc in a busy
+          // sequencer that is committing serially it is possible to keep
+          // submitting new transactions fast enough that we get stuck doing
+          // so.  the alternative is to block here... fixme?
+        } else if (txc->osr->txc_with_unstable_io) {
+          dout(20) << __func__ << " prior txc(s) with unstable ios "
+            << txc->osr->txc_with_unstable_io.load() << dendl;
+        } else if (cct->_conf->bluestore_debug_randomize_serial_transaction &&
+            rand() % cct->_conf->bluestore_debug_randomize_serial_transaction
+            == 0) {
+          dout(20) << __func__ << " DEBUG randomly forcing submit via kv thread"
+            << dendl;
+        } else {
+          int r = cct->_conf->bluestore_debug_omit_kv_commit ? 0 : db->submit_transaction(txc->t);
+          assert(r == 0);
+          txc->state = TransContext::STATE_KV_SUBMITTED;
+          _txc_applied_kv(txc);
+        }
       }
       {
-	std::lock_guard<std::mutex> l(kv_lock);
-	kv_queue.push_back(txc);
-	kv_cond.notify_one();
-	if (txc->state != TransContext::STATE_KV_SUBMITTED) {
-	  kv_queue_unsubmitted.push_back(txc);
-	  ++txc->osr->kv_committing_serially;
-	}
-	if (txc->had_ios)
-	  kv_ios++;
-	kv_throttle_costs += txc->cost;
+        dout(0) <<"mydebug: kv_queue.push_back"<< dendl;
+        std::lock_guard<std::mutex> l(kv_lock);
+        kv_queue.push_back(txc);
+        kv_cond.notify_one();
+        if (txc->state != TransContext::STATE_KV_SUBMITTED) {
+          dout(0) <<"mydebug: kv_queue_unsubmitted.push_back"<< dendl;
+          kv_queue_unsubmitted.push_back(txc);
+          ++txc->osr->kv_committing_serially;
+        }
+        if (txc->had_ios){
+          kv_ios++;
+          dout(0) <<"mydebug: txc->had_ios"<< dendl;
+        }
+        kv_throttle_costs += txc->cost;
       }
       return;
     case TransContext::STATE_KV_SUBMITTED:
@@ -8519,6 +8528,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
     case TransContext::STATE_FINISHING:
       txc->log_state_latency(logger, l_bluestore_state_finishing_lat);
       _txc_finish(txc);
+      
       return;
 
     default:
@@ -8740,6 +8750,9 @@ void BlueStore::_txc_committed_kv(TransContext *txc)
   unsigned n = txc->osr->parent->shard_hint.hash_to_shard(m_finisher_num);
   if (txc->oncommit) {
     logger->tinc(l_bluestore_commit_lat, ceph_clock_now() - txc->start);
+    if(txc->op_id==Transaction::OP_WRITE){
+        dout(20)<<"mydebug: finish write time = "<<ceph_clock_now()-txc->start<<dendl;
+    }
     finishers[n]->queue(txc->oncommit);
     txc->oncommit = NULL;
   }
@@ -8755,6 +8768,7 @@ void BlueStore::_txc_committed_kv(TransContext *txc)
       finishers[n]->queue(txc->oncommits);
     }
   }
+  
   txc->log_state_latency(logger, l_bluestore_state_kv_committing_lat);
 }
 
@@ -9611,6 +9625,7 @@ int BlueStore::queue_transactions(
   logger->inc(l_bluestore_txc);
 
   // execute (start)
+  dout(0)<< "mydebug: " << txc->get_state_name() << dendl;
   _txc_state_proc(txc);
 
   logger->tinc(l_bluestore_submit_lat, ceph_clock_now() - start);
@@ -9759,6 +9774,7 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
 	uint32_t fadvise_flags = i.get_fadvise_flags();
         bufferlist bl;
         i.decode_bl(bl);
+        txc->op_id = Transaction::OP_WRITE;
 	r = _write(txc, c, o, off, len, bl, fadvise_flags);
       }
       break;
@@ -10082,6 +10098,7 @@ void BlueStore::_do_write_small(
   //这个地方不确定的是min_off是blob的min_off还是即将写入数据的min_off
   uint32_t alloc_len = min_alloc_size;
   //offset0为该offset存在于第几个min_alloc_size的块，这里指第几个64KB
+  //这里应该是为了查看可能重叠的内容
   auto offset0 = P2ALIGN(offset, alloc_len);
 
   //dout(10) << "mydebug: target_blob_size="<<wctx->target_blob_size<<", min_alloc_size="
@@ -10125,16 +10142,16 @@ void BlueStore::_do_write_small(
 
   //这部分用于定位目标lextent
   //ep=extent pointer,指向当前的extent
-  //永远返回的是offset所在的lextent，如果不在的话，那就是最后可能相交的，也就是后一个，如果找到的lower——bound已经是
+  //返回的是大于等于offset的第一个lextent，如果没有，那么返回的是最后一个
   //第一个了，那么就用第一个
   auto ep = o->extent_map.seek_lextent(offset);//找到了offset所在的lextent
   if(ep==end && ep!=begin){
     //这种情况是该offset比任何一个lextent的end都要大
     //dout(10) << "mydebug: offset has not shown yet!"<< dendl;
   }
-  if (ep != begin) {//这个地方感觉就是如果之前的lextent所在的blob还有剩余位置的话，也就是之前的lextent所在的blob的大小还可以容纳这个offset
+  if (ep != begin) {//也有可能和前一个lextent的尾部有重叠
     --ep;//往前找一个
-    if (ep->blob_end() <= offset) {
+    if (ep->blob_end() <= offset) {//=也不行
       //如果该lextent所在的blob的end也比offset要小
       ++ep;//那就算了，这主要针对的是这个offest比当前的lextent的起始offset更前的情况
     } else{//否则的话，就复用前一个lextent所在的blob
@@ -10154,6 +10171,7 @@ void BlueStore::_do_write_small(
     //any_change目前还没搞得太懂
     any_change = false;
  
+    //如果ep->logical_offset 大于等于 offset + max_bsize，将不可能有重叠
     if (ep != end && ep->logical_offset < offset + max_bsize) {
       //如果是新写？
       //如果该lextent不是空的(说明前面找到的是可以复用的)，
@@ -10161,266 +10179,279 @@ void BlueStore::_do_write_small(
       //可以理解为该部分夹在两个lextent中间
       //理论上来说是新建一个blob？或者放到后面？
       BlobRef b = ep->blob;//b指向该lextent对应的blob
-      auto bstart = ep->blob_start();//bstart是该extent所对应blob的偏移，也就是说可能这个lextent并不是顶着blob放置的，前面可能还有空间
+      auto bstart = ep->blob_start();//ep所在blob的逻辑偏移
       dout(20) << __func__ << " considering " << *b
 	       << " bstart 0x" << std::hex << bstart << std::dec << dendl;
       if (bstart >= end_offs) { //如果bstart比要写的这个小块的结尾offset大，直接忽略
-	dout(0) << __func__ << " ignoring distant " << *b << dendl;
+	      dout(0) << __func__ << " ignoring distant " << *b << dendl;
       } else if (!b->get_blob().is_mutable()) {//如果有重合，但是不可更改，那还是不行
-	dout(0) << __func__ << " ignoring immutable " << *b << dendl;
+	      dout(0) << __func__ << " ignoring immutable " << *b << dendl;
       } else if (ep->logical_offset % min_alloc_size !=
-		  ep->blob_offset % min_alloc_size) {//如果有重合并且可以更改，但是当前lextent和blob中间剩余的空间并不是min_alloc_size的整数倍
+		   ep->blob_offset % min_alloc_size) {//如果有重合并且可以更改，但是当前lextent和blob中间剩余的空间并不是min_alloc_size的整数倍
       //那么不符合按min_alloc_size来分配空间，也不行，
-	dout(0) << __func__ << " ignoring offset-skewed " << *b << dendl;
+	      dout(0) << __func__ << " ignoring offset-skewed " << *b << dendl;
       } else {
-  //如果有重合且可以更改，并且剩下的空间也是min_alloc_size的整数倍
-  //因为是小写，这意味着这块内容的大小是小于min_alloc_size，所以它可以被放置在ep对应的blob中
-  //获得blob的chunk_size,打印出来是4k
-	uint64_t chunk_size = b->get_blob().get_chunk_size(block_size);
-  dout(20)<<"mydebug: chunk_size = "<<chunk_size<<dendl;
-	// can we pad our head/tail out with zeros?是否可以填充0？这个是我们接下来要做的哈哈
-	uint64_t head_pad, tail_pad;
-  //获得头部和尾部需要填充的空间
-	head_pad = P2PHASE(offset, chunk_size);
-	tail_pad = P2NPHASE(end_offs, chunk_size);
-  //如果需要填充的话
-	if (head_pad || tail_pad) {//将[offset-head_pad, end_offs+tail_pad]给读上来
-  //因为fault_range的第二个参数是长度，所以后面减前面，就是第二个参数的意思，改下顺序会更好理解
-  //或者理解成原来的长度加上两个pad的长度
-	  o->extent_map.fault_range(db, offset - head_pad,
-				    end_offs - offset + head_pad + tail_pad);
-	}
-  //如果是头部填充，并且头部填充的范围内已经有lextent了
-  //说明是覆盖写？但是之前不是已经把可能覆盖的都读上来了嘛
-  //这个地方没太看懂
-  //是不是可以理解为，尽管这一段是夹在两个lextent中间，但是后面lextent的blob可能会覆盖到前面的lextent，
-  //所以在填充头部的时候，有可能会冲突到前面的lextent，如果填充的第一个小块和前面的lextent有重叠，那么就不能填充了
-	if (head_pad &&
-	    o->extent_map.has_any_lextents(offset - head_pad, chunk_size)) {
-	  head_pad = 0;
-    dout(20)<<"mydebug: head_pad = 0"<<dendl;
-	}
-  //这部分同理
-	if (tail_pad && o->extent_map.has_any_lextents(end_offs, tail_pad)) {
-	  tail_pad = 0;
-    dout(20)<<"mydebug: tail_pad = 0"<<dendl;
-	}
+        //可能对应如下情况，
+        //    ........
+        //    ...
+        //  ........
+        //       ...
+        //如果有重合且可以更改，并且剩下的空间也是min_alloc_size的整数倍
+        //因为是小写，这意味着这块内容的大小是小于min_alloc_size，所以它可以被放置在ep对应的blob中
+        //获得blob的chunk_size,打印出来是4k
+        uint64_t chunk_size = b->get_blob().get_chunk_size(block_size);
+        dout(20)<<"mydebug: chunk_size = "<<chunk_size<<dendl;
+        // can we pad our head/tail out with zeros?是否可以填充0？这个是我们接下来要做的哈哈
+        uint64_t head_pad, tail_pad;
+        //获得头部和尾部需要填充的空间
+        head_pad = P2PHASE(offset, chunk_size);
+        tail_pad = P2NPHASE(end_offs, chunk_size);
+        //如果需要填充的话
+        if (head_pad || tail_pad) {//将[offset-head_pad, end_offs+tail_pad]给读上来
+        //因为fault_range的第二个参数是长度，所以后面减前面，就是第二个参数的意思，改下顺序会更好理解
+        //或者理解成原来的长度加上两个pad的长度
+          o->extent_map.fault_range(db, offset - head_pad,
+                  end_offs - offset + head_pad + tail_pad);//这个应该只是加载map？也就是原数据
+        }
+        //如果是头部填充，并且头部填充的范围内已经有lextent了
+        //说明是覆盖写？但是之前不是已经把可能覆盖的都读上来了嘛
+        //这个地方没太看懂
+        //是不是可以理解为，尽管这一段是夹在两个lextent中间，但是后面lextent的blob可能会覆盖到前面的lextent，
+        //所以在填充头部的时候，有可能会冲突到前面的lextent，如果填充的第一个小块和前面的lextent有重叠，那么就不能填充了
+        if (head_pad &&
+            o->extent_map.has_any_lextents(offset - head_pad, chunk_size)) {
+          head_pad = 0;
+          dout(20)<<"mydebug: head_pad = 0"<<dendl;
+        }
+        //这部分同理
+        if (tail_pad && o->extent_map.has_any_lextents(end_offs, tail_pad)) {
+          tail_pad = 0;
+          dout(20)<<"mydebug: tail_pad = 0"<<dendl;
+        }
 
-  //这个是数据段在blob中的起始偏移
-	uint64_t b_off = offset - head_pad - bstart;
-  //这个是数据段的最终长度
-  //注意，这个长度很可能不是chunk的整数倍
-	uint64_t b_len = length + head_pad + tail_pad;
+        //这个是数据段在blob中的起始偏移
+        uint64_t b_off = offset - head_pad - bstart;
+        //这个是数据段的最终长度
+        //注意，这个长度很可能不是chunk的整数倍
+        uint64_t b_len = length + head_pad + tail_pad;
 
-  //到这步就得到了该往哪个lextent所对应blob的具体位置进行写入了，并且不会与别的lextent重合
+        //到这步就得到了该往哪个lextent所对应blob的具体位置进行写入了，并且不会与别的lextent重合
 
 
-	// direct write into unused blocks of an existing mutable blob?（这个应该是之前的优化思路）
-  //如果b_off是和chunk_size对齐的，并且b_len也是整数倍chunk_size，也就是说这段数据可以用若干个chunk写入
-  //并且blob的总长度是能够放下目标块的
-  //并且目标写入地址是空的
-  //并且目标写入地址是已经分配的，应该指的是有对应的pextent
-	if ((b_off % chunk_size == 0 && b_len % chunk_size == 0) &&
-	    b->get_blob().get_ondisk_length() >= b_off + b_len &&
-	    b->get_blob().is_unused(b_off, b_len) &&
-	    b->get_blob().is_allocated(b_off, b_len)) {
-    //先对这段内容进行填充
-	  _apply_padding(head_pad, tail_pad, bl);
+        // direct write into unused blocks of an existing mutable blob?（这个应该是之前的优化思路）
+        //如果b_off是和chunk_size对齐的，并且b_len也是整数倍chunk_size，也就是说这段数据可以用若干个chunk写入
+        //并且blob的总长度是能够放下目标块的
+        //并且目标写入地址是空的
+        //并且目标写入地址是已经分配的，应该指的是有对应的pextent
+        if ((b_off % chunk_size == 0 && b_len % chunk_size == 0) &&
+            b->get_blob().get_ondisk_length() >= b_off + b_len &&
+            b->get_blob().is_unused(b_off, b_len) &&
+            b->get_blob().is_allocated(b_off, b_len)) {
+              
+          //先对这段内容进行填充
+          _apply_padding(head_pad, tail_pad, bl);
 
-	  dout(20) << __func__ << "  write to unused 0x" << std::hex
-		   << b_off << "~" << b_len
-		   << " pad 0x" << head_pad << " + 0x" << tail_pad
-		   << std::dec << " of mutable " << *b << dendl;
-    //写入blob的shared_blob的cache，并在txc中的shared_blobs_written插入该shared_blob进行记录
-    //这边cache在前面是因为下面有可能直接aio了
-	  _buffer_cache_write(txc, b, b_off, bl,
-			      wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
+          dout(20) << __func__ << "  write to unused 0x" << std::hex
+            << b_off << "~" << b_len
+            << " pad 0x" << head_pad << " + 0x" << tail_pad
+            << std::dec << " of mutable " << *b << dendl;
+          //写入blob的shared_blob的cache，并在txc中的shared_blobs_written插入该shared_blob进行记录
+          //这边cache在前面是因为下面有可能直接aio了
+          _buffer_cache_write(txc, b, b_off, bl,
+                  wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
 
-	  if (!g_conf->bluestore_debug_omit_block_device_write) {
-      dout(20)<<"mydebug:bluestore_debug_omit_block_device_write=FALSE"<<dendl;
-      dout(20)<<"mydebug: prefer_deferred_size="<<prefer_deferred_size<<dendl;
-	    if (b_len <= prefer_deferred_size) {
-        //如果b_len太小，进行defer写
-	      dout(20) << __func__ << " deferring small 0x" << std::hex
-		       << b_len << std::dec << " unused write via deferred" << dendl;
-	      bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
-	      op->op = bluestore_deferred_op_t::OP_WRITE;
-        //map函数中绑定的是填充函数
-	      b->get_blob().map(
-		b_off, b_len,
-		[&](uint64_t offset, uint64_t length) {
-		  op->extents.emplace_back(bluestore_pextent_t(offset, length));
-		  return 0;
-		});
-	      op->data = bl;
-	    } else {
-        //直接进行写入
-        //map函数中绑定的是aio函数
-	      b->get_blob().map_bl(
-		b_off, bl,
-		[&](uint64_t offset, bufferlist& t) {
-		  bdev->aio_write(offset, t,
-				  &txc->ioc, wctx->buffered);
-		});
-	    }
-	  }else{
-      dout(20)<<"mydebug:bluestore_debug_omit_block_device_write=TRUE"<<dendl;
-      dout(20)<<"mydebug: prefer_deferred_size="<<prefer_deferred_size<<dendl;
-    }
-    //写入后生成lextent
-	  b->dirty_blob().calc_csum(b_off, bl);
-	  dout(20) << __func__ << "  lex old " << *ep << dendl;
-    //lextent的set需要collection，逻辑偏移，blob内的实际偏移(b_off+head_pad),blob
-	  Extent *le = o->extent_map.set_lextent(c, offset, b_off + head_pad, length,
-						 b,
-						 &wctx->old_extents);
-    //将blob中的blob_offset和长度标记为已用
-    //不管尾部填充了吗？（好像不用管，再也用不到了，这个也许就是碎片）
-	  b->dirty_blob().mark_used(le->blob_offset, le->length);
-	  txc->statfs_delta.stored() += le->length;
-	  dout(20) << __func__ << "  lex " << *le << dendl;
-	  logger->inc(l_bluestore_write_small_unused);
-	  return;//最规整的写入就结束了
-	}else{
-    dout(20) <<"mydebug:no_aligned write"<< dendl;
-  }
+          if (!g_conf->bluestore_debug_omit_block_device_write) {
+
+            dout(20)<<"mydebug:bluestore_debug_omit_block_device_write=FALSE"<<dendl;
+            dout(20)<<"mydebug: prefer_deferred_size="<<prefer_deferred_size<<dendl;
+            if (b_len <= prefer_deferred_size) {
+              //如果b_len太小，进行defer写
+              dout(20) << __func__ << " deferring small 0x" << std::hex
+                << b_len << std::dec << " unused write via deferred" << dendl;
+              dout(0)<<"mydebug: deffer write in 10255"<<dendl;
+              bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
+              op->op = bluestore_deferred_op_t::OP_WRITE;
+              //map函数中绑定的是填充函数
+              b->get_blob().map(
+                b_off, b_len,
+                [&](uint64_t offset, uint64_t length) {
+                  op->extents.emplace_back(bluestore_pextent_t(offset, length));
+                  return 0;
+                });
+              op->data = bl;
+            } else {
+              //直接进行写入
+              //map函数中绑定的是aio函数
+              dout(0)<<"mydebug: direct write in 10269"<<dendl;
+              b->get_blob().map_bl(
+              b_off, bl,
+              [&](uint64_t offset, bufferlist& t) {
+                bdev->aio_write(offset, t,
+                    &txc->ioc, wctx->buffered);
+              });
+            }
+          }else{
+            dout(20)<<"mydebug:bluestore_debug_omit_block_device_write=TRUE"<<dendl;
+            dout(20)<<"mydebug: prefer_deferred_size="<<prefer_deferred_size<<dendl;
+          }
+          //写入后生成lextent
+          b->dirty_blob().calc_csum(b_off, bl);
+          dout(20) << __func__ << "  lex old " << *ep << dendl;
+          //lextent的set需要collection，逻辑偏移，blob内的实际偏移(b_off+head_pad),blob
+          Extent *le = o->extent_map.set_lextent(c, offset, b_off + head_pad, length,
+                  b,
+                  &wctx->old_extents);
+          //将blob中的blob_offset和长度标记为已用
+          //不管尾部填充了吗？（好像不用管，再也用不到了，这个也许就是碎片）
+          b->dirty_blob().mark_used(le->blob_offset, le->length);
+          txc->statfs_delta.stored() += le->length;
+          dout(20) << __func__ << "  lex " << *le << dendl;
+          logger->inc(l_bluestore_write_small_unused);
+          return;//最规整的写入就结束了
+        }else{
+          dout(20) <<"mydebug:no_aligned write"<< dendl;
+        }
   
-  //如果b_off或者b_length不是对齐的（注意，这个时候还是在新写的范畴里）
-	// read some data to fill out the chunk?
-  //为了实现以chunk对齐的写入，还是需要对头尾使用已有数据进行填充
-	uint64_t head_read = P2PHASE(b_off, chunk_size);
-	uint64_t tail_read = P2NPHASE(b_off + b_len, chunk_size);
-  //如果有填充并且blob上的空间足够，并且填充部分是小于min_alloc_size的（？）
-	if ((head_read || tail_read) &&
-	    (b->get_blob().get_ondisk_length() >= b_off + b_len + tail_read) &&
-	    head_read + tail_read < min_alloc_size) {
-	  b_off -= head_read;
-	  b_len += head_read + tail_read;
+        // read some data to fill out the chunk?
+        //如果预填充的数据块不是4k对齐的，那么不能直接写入，还是需要对头尾使用已有数据进行填充
+        uint64_t head_read = P2PHASE(b_off, chunk_size);
+        uint64_t tail_read = P2NPHASE(b_off + b_len, chunk_size);
+        //如果有填充并且blob上的空间足够，并且填充部分是小于min_alloc_size的（？感觉不太可能）
+        if ((head_read || tail_read) &&
+            (b->get_blob().get_ondisk_length() >= b_off + b_len + tail_read) &&
+            head_read + tail_read < min_alloc_size) {
+          b_off -= head_read;
+          b_len += head_read + tail_read;
 
-	} else {//否则就还是不填充
-	  head_read = tail_read = 0;
-	}
+        } else {//否则就还是不填充
+          head_read = tail_read = 0;
+        }
 
-	// chunk-aligned deferred overwrite?
-  //如果填充后blob空间够，并且是块对齐的
-	if (b->get_blob().get_ondisk_length() >= b_off + b_len &&
-	    b_off % chunk_size == 0 &&
-	    b_len % chunk_size == 0 &&
-	    b->get_blob().is_allocated(b_off, b_len)) {
-    //这边为啥还是填充0？
-	  _apply_padding(head_pad, tail_pad, bl);
+        // chunk-aligned deferred overwrite?
+        //如果填充后blob空间够，并且是块对齐的
+        if (b->get_blob().get_ondisk_length() >= b_off + b_len &&
+            b_off % chunk_size == 0 &&
+            b_len % chunk_size == 0 &&
+            b->get_blob().is_allocated(b_off, b_len)) {
+          //这边先把前面的到的head_pad和tail_pad给填充好，因为有可能只有一侧有重叠
+          _apply_padding(head_pad, tail_pad, bl);
 
-	  dout(20) << __func__ << "  reading head 0x" << std::hex << head_read
-		   << " and tail 0x" << tail_read << std::dec << dendl;
-	  if (head_read) {
-	    bufferlist head_bl;
-      //将那一小部分读出来
-      dout(0)<<"mydebug: _do_read"<<dendl;
-	    int r = _do_read(c.get(), o, offset - head_pad - head_read, head_read,
-			     head_bl, 0);
-	    assert(r >= 0 && r <= (int)head_read);
-      //该部分和前面的lextent之间有小空隙的话，headread会大于r
-	    size_t zlen = head_read - r;
-	    if (zlen) {//将空隙用0补上，直接在head_bl后面补上0
-	      head_bl.append_zero(zlen);
-	      logger->inc(l_bluestore_write_pad_bytes, zlen);
-	    }
-	    bl.claim_prepend(head_bl);//这个地方没看懂
-	    logger->inc(l_bluestore_write_penalty_read_ops);
-	  }
-	  if (tail_read) {
-	    bufferlist tail_bl;
-      dout(0)<<"mydebug: _do_read"<<dendl;
-	    int r = _do_read(c.get(), o, offset + length + tail_pad, tail_read,
-			     tail_bl, 0);
-	    assert(r >= 0 && r <= (int)tail_read);
-	    size_t zlen = tail_read - r;
-	    if (zlen) {//这个地方不会反了嘛，空隙在后面？还是说claim_append和claim_prepend会自动纠正？
-	      tail_bl.append_zero(zlen);
-	      logger->inc(l_bluestore_write_pad_bytes, zlen);
-	    }
-	    bl.claim_append(tail_bl);
-	    logger->inc(l_bluestore_write_penalty_read_ops);
-	  }
-	  logger->inc(l_bluestore_write_small_pre_read);
+          dout(20) << __func__ << "  reading head 0x" << std::hex << head_read
+            << " and tail 0x" << tail_read << std::dec << dendl;
+          //只在这一段会出现_do_read
+          if (head_read) {
+            bufferlist head_bl;
+            //将那一小部分读出来
+            dout(20)<<"mydebug: _do_head_read"<<dendl;
+            // int r = _do_read(c.get(), o, offset - head_pad - head_read, head_read,
+            //     head_bl, 0);
+            int r = 0;
+            assert(r >= 0 && r <= (int)head_read);
+            //该部分和前面的lextent之间有小空隙的话，headread会大于r
+            size_t zlen = head_read - r;
+            if (zlen) {//将空隙用0补上，直接在head_bl后面补上0
+              head_bl.append_zero(zlen);
+              logger->inc(l_bluestore_write_pad_bytes, zlen);
+            }
+            bl.claim_prepend(head_bl);//加入到前面
+            logger->inc(l_bluestore_write_penalty_read_ops);
+          }
+          if (tail_read) {
+            bufferlist tail_bl;
+            dout(20)<<"mydebug: _do_tail_read"<<dendl;
+            // int r = _do_read(c.get(), o, offset + length + tail_pad, tail_read,
+            //     tail_bl, 0);
+            int r = 0;
+            assert(r >= 0 && r <= (int)tail_read);
+            size_t zlen = tail_read - r;
+            if (zlen) {//这个地方不会反了嘛，空隙在后面？还是说claim_append和claim_prepend会自动纠正？
+              tail_bl.append_zero(zlen);
+              logger->inc(l_bluestore_write_pad_bytes, zlen);
+            }
+            bl.claim_append(tail_bl);//加入到后面，可以写个测试看看怎么个事儿
+            logger->inc(l_bluestore_write_penalty_read_ops);
+          }
+          logger->inc(l_bluestore_write_small_pre_read);
 
-    //这个时候已经read和modify完了，准备延迟write
-	  bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
-	  op->op = bluestore_deferred_op_t::OP_WRITE;
-    //先写cache
-	  _buffer_cache_write(txc, b, b_off, bl,
-			      wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
+          //这个时候已经read和modify完了，准备延迟write
+          dout(0)<<"mydebug: deffer write len;"<<b_len<<";in 10361"<<dendl;
+          bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
+          op->op = bluestore_deferred_op_t::OP_WRITE;
+          //先写cache
+          _buffer_cache_write(txc, b, b_off, bl,
+                  wctx->buffered ? 0 : Buffer::FLAG_NOCACHE);
+          
+          int r = b->get_blob().map(
+            b_off, b_len,
+            [&](uint64_t offset, uint64_t length) {
+              op->extents.emplace_back(bluestore_pextent_t(offset, length));
+              return 0;
+            });
+          assert(r == 0);
+          if (b->get_blob().csum_type) {
+            b->dirty_blob().calc_csum(b_off, bl);
+          }
+          op->data.claim(bl);//这边和前面有点不一样，是先删除，再替换，前面是直接=指向，因为后面用不到了？
 
-	  int r = b->get_blob().map(
-	    b_off, b_len,
-	    [&](uint64_t offset, uint64_t length) {
-	      op->extents.emplace_back(bluestore_pextent_t(offset, length));
-	      return 0;
-	    });
-	  assert(r == 0);
-	  if (b->get_blob().csum_type) {
-	    b->dirty_blob().calc_csum(b_off, bl);
-	  }
-	  op->data.claim(bl);//这边和前面有点不一样，是先删除，再替换，前面是直接=指向，因为后面用不到了？
+          dout(20) << __func__ << "  deferred write 0x" << std::hex << b_off << "~"
+            << b_len << std::dec << " of mutable " << *b
+            << " at " << op->extents << dendl;
+          //和前面一样，改动lextent
+          Extent *le = o->extent_map.set_lextent(c, offset, offset - bstart, length,
+                  b, &wctx->old_extents);
+          b->dirty_blob().mark_used(le->blob_offset, le->length);
+          txc->statfs_delta.stored() += le->length;
+          dout(20) << __func__ << "  lex " << *le << dendl;
+          logger->inc(l_bluestore_write_small_deferred);
+          return;
+	      }
 
-	  dout(20) << __func__ << "  deferred write 0x" << std::hex << b_off << "~"
-		   << b_len << std::dec << " of mutable " << *b
-		   << " at " << op->extents << dendl;
-    //和前面一样，改动lextent
-	  Extent *le = o->extent_map.set_lextent(c, offset, offset - bstart, length,
-						 b, &wctx->old_extents);
-	  b->dirty_blob().mark_used(le->blob_offset, le->length);
-	  txc->statfs_delta.stored() += le->length;
-	  dout(20) << __func__ << "  lex " << *le << dendl;
-	  logger->inc(l_bluestore_write_small_deferred);
-	  return;
-	}
+        //如果使用read填充后空间不够或者依然不是块对齐？
+        // try to reuse blob if we can
+        if (b->can_reuse_blob(min_alloc_size,
+                  max_bsize,
+                  offset0 - bstart,
+                  &alloc_len)) {
 
-  //如果使用read填充后空间不够或者依然不是块对齐？
-	// try to reuse blob if we can
-	if (b->can_reuse_blob(min_alloc_size,
-			      max_bsize,
-			      offset0 - bstart,
-			      &alloc_len)) {
-	  assert(alloc_len == min_alloc_size); // expecting data always
-					       // fit into reused blob
-	  // Need to check for pending writes desiring to
-	  // reuse the same pextent. The rationale is that during GC two chunks
-	  // from garbage blobs(compressed?) can share logical space within the same
-	  // AU. That's in turn might be caused by unaligned len in clone_range2.
-	  // Hence the second write will fail in an attempt to reuse blob at
-	  // do_alloc_write().
-	  if (!wctx->has_conflict(b,
-				  offset0,
-				  offset0 + alloc_len, 
-				  min_alloc_size)) {
+            assert(alloc_len == min_alloc_size); // expecting data always
+                      // fit into reused blob
+            // Need to check for pending writes desiring to
+            // reuse the same pextent. The rationale is that during GC two chunks
+            // from garbage blobs(compressed?) can share logical space within the same
+            // AU. That's in turn might be caused by unaligned len in clone_range2.
+            // Hence the second write will fail in an attempt to reuse blob at
+            // do_alloc_write().
+            if (!wctx->has_conflict(b,
+                  offset0,
+                  offset0 + alloc_len, 
+                  min_alloc_size)) {
 
-	    // we can't reuse pad_head/pad_tail since they might be truncated 
-	    // due to existent extents
-	    uint64_t b_off = offset - bstart;
-	    uint64_t b_off0 = b_off;
-	    _pad_zeros(&bl, &b_off0, chunk_size);
+              // we can't reuse pad_head/pad_tail since they might be truncated 
+              // due to existent extents
+              uint64_t b_off = offset - bstart;
+              uint64_t b_off0 = b_off;
+              _pad_zeros(&bl, &b_off0, chunk_size);
 
-	    dout(20) << __func__ << " reuse blob " << *b << std::hex
-		     << " (0x" << b_off0 << "~" << bl.length() << ")"
-		     << " (0x" << b_off << "~" << length << ")"
-		     << std::dec << dendl;
-
-	    o->extent_map.punch_hole(c, offset, length, &wctx->old_extents);
-	    wctx->write(offset, b, alloc_len, b_off0, bl, b_off, length,
-			false, false);
-	    logger->inc(l_bluestore_write_small_unused);
-	    return;
-	  }
-	}
+              dout(20) << __func__ << " reuse blob " << *b << std::hex
+                << " (0x" << b_off0 << "~" << bl.length() << ")"
+                << " (0x" << b_off << "~" << length << ")"
+                << std::dec << dendl;
+              dout(0)<<"mydebug: direct write in 10423"<<dendl;
+              o->extent_map.punch_hole(c, offset, length, &wctx->old_extents);
+              wctx->write(offset, b, alloc_len, b_off0, bl, b_off, length,
+              false, false);
+              logger->inc(l_bluestore_write_small_unused);
+              return;
+            }
+	        }
       }
       //如果这个ep不能满足要求，转向下一个ep
       ++ep;
       any_change = true;
     } // if (ep != end && ep->logical_offset < offset + max_bsize)//结束新写
-  else{
-    //dout(10)<<"mydebug: offset larger!"<<dendl;
-  } 
+    else{
+      //dout(10)<<"mydebug: offset larger!"<<dendl;
+    } 
     //说明要么已经到end了，要么和现有的lextent有重叠
     // check extent for reuse in reverse order
     //如果前一个ep不是end，并且前一个lextent的逻辑偏移是大于min_off的，也就是说可能会被影响到
@@ -10433,42 +10464,43 @@ void BlueStore::_do_write_small(
 			    max_bsize,
                             offset0 - bstart,
                             &alloc_len)) {
-	assert(alloc_len == min_alloc_size); // expecting data always
+	      assert(alloc_len == min_alloc_size); // expecting data always
 					     // fit into reused blob
-	// Need to check for pending writes desiring to
-	// reuse the same pextent. The rationale is that during GC two chunks
-	// from garbage blobs(compressed?) can share logical space within the same
-	// AU. That's in turn might be caused by unaligned len in clone_range2.
-	// Hence the second write will fail in an attempt to reuse blob at
-	// do_alloc_write().
-	if (!wctx->has_conflict(b,
-				offset0,
-				offset0 + alloc_len, 
-				min_alloc_size)) {
+        // Need to check for pending writes desiring to
+        // reuse the same pextent. The rationale is that during GC two chunks
+        // from garbage blobs(compressed?) can share logical space within the same
+        // AU. That's in turn might be caused by unaligned len in clone_range2.
+        // Hence the second write will fail in an attempt to reuse blob at
+        // do_alloc_write().
+        if (!wctx->has_conflict(b,
+              offset0,
+              offset0 + alloc_len, 
+              min_alloc_size)) {
 
-	  uint64_t chunk_size = b->get_blob().get_chunk_size(block_size);
-	  uint64_t b_off = offset - bstart;
-	  uint64_t b_off0 = b_off;
-	  _pad_zeros(&bl, &b_off0, chunk_size);
+          uint64_t chunk_size = b->get_blob().get_chunk_size(block_size);
+          uint64_t b_off = offset - bstart;
+          uint64_t b_off0 = b_off;
+          _pad_zeros(&bl, &b_off0, chunk_size);
 
-	  dout(20) << __func__ << " reuse blob " << *b << std::hex
-		    << " (0x" << b_off0 << "~" << bl.length() << ")"
-		    << " (0x" << b_off << "~" << length << ")"
-		    << std::dec << dendl;
+          dout(20) << __func__ << " reuse blob " << *b << std::hex
+              << " (0x" << b_off0 << "~" << bl.length() << ")"
+              << " (0x" << b_off << "~" << length << ")"
+              << std::dec << dendl;
 
-    //puch_hole只分割lextent，具体写在哪个blob里面不好说
-	  o->extent_map.punch_hole(c, offset, length, &wctx->old_extents);
-	  wctx->write(offset, b, alloc_len, b_off0, bl, b_off, length,
-		      false, false);
-	  logger->inc(l_bluestore_write_small_unused);
-	  return;
-	}
+          //puch_hole只分割lextent，具体写在哪个blob里面不好说
+          dout(0)<<"mydebug: direct write in 10475"<<dendl;
+          o->extent_map.punch_hole(c, offset, length, &wctx->old_extents);
+          wctx->write(offset, b, alloc_len, b_off0, bl, b_off, length,
+                false, false);
+          logger->inc(l_bluestore_write_small_unused);
+          return;
+        }
       } 
       if (prev_ep != begin) {
-	--prev_ep;
-	any_change = true;
+        --prev_ep;
+        any_change = true;
       } else {
-	prev_ep = end; // to avoid useless first extent re-check
+        prev_ep = end; // to avoid useless first extent re-check
       }
     } // if (prev_ep != end && prev_ep->logical_offset >= min_off) 
   } while (any_change);
@@ -10480,6 +10512,7 @@ void BlueStore::_do_write_small(
   uint64_t b_off = P2PHASE(offset, alloc_len);
   uint64_t b_off0 = b_off;
   _pad_zeros(&bl, &b_off0, block_size);
+  dout(0)<<"mydebug: new write in 10499"<<dendl;
   o->extent_map.punch_hole(c, offset, length, &wctx->old_extents);
   wctx->write(offset, b, alloc_len, b_off0, bl, b_off, length, true, true);
   logger->inc(l_bluestore_write_small_new);
@@ -10687,6 +10720,7 @@ int BlueStore::_do_alloc_write(
 	   << " " << wctx->writes.size() << " blobs"
 	   << dendl;
   if (wctx->writes.empty()) {
+    dout(0) <<"mydebug: empty wctx->writes"<< dendl;
     return 0;
   }
 
@@ -11043,6 +11077,7 @@ void BlueStore::_do_write_data(
   if (offset / min_alloc_size == (end - 1) / min_alloc_size &&
       (length != min_alloc_size)) {
     // we fall within the same block
+    dout(0)<<"mydebug: _do_write_small for the same block, len="<<length<<dendl;
     _do_write_small(txc, c, o, offset, length, p, wctx);
   } else {
     uint64_t head_offset, head_length;
@@ -11057,9 +11092,9 @@ void BlueStore::_do_write_data(
 
     middle_offset = head_offset + head_length;
     middle_length = length - head_length - tail_length;
-
+    dout(0)<<"mydebug: head_length="<<head_length<<",tail_length="<<tail_length<<dendl;
     if (head_length) {
-      dout(20)<<"mydebug: _do_write_small"<<dendl;
+      dout(20)<<"mydebug: _do_write_small for head_length"<<dendl;
       _do_write_small(txc, c, o, head_offset, head_length, p, wctx);
     }
 
@@ -11069,10 +11104,11 @@ void BlueStore::_do_write_data(
     }
 
     if (tail_length) {
-      dout(20)<<"mydebug: _do_write_small"<<dendl;
+      dout(20)<<"mydebug: _do_write_small for tail_length"<<dendl;
       _do_write_small(txc, c, o, tail_offset, tail_length, p, wctx);
     }
   }
+  dout(20)<<"mydebug: deffer write time = "<<ceph_clock_now()-txc->start<<dendl;
 }
 
 void BlueStore::_choose_write_options(
@@ -11285,14 +11321,14 @@ int BlueStore::_do_write(
 
   _wctx_finish(txc, c, o, &wctx);
   if (end > o->onode.size) {
-    dout(20) << __func__ << " extending size to 0x" << std::hex << end
+    dout(0) << __func__ << " extending size to 0x" << std::hex << end
              << std::dec << dendl;
     o->onode.size = end;
   }
 
   if (benefit >= g_conf->bluestore_gc_enable_total_threshold) {
     if (!gc.get_extents_to_collect().empty()) {
-      dout(20) << __func__ << " perform garbage collection, "
+      dout(0) << __func__ << " perform garbage collection, "
                << "expected benefit = " << benefit << " AUs" << dendl;
       r = _do_gc(txc, c, o, gc, wctx, &dirty_start, &dirty_end);
       if (r < 0) {
@@ -11300,7 +11336,7 @@ int BlueStore::_do_write(
              << dendl;
         goto out;
       }
-      dout(20)<<__func__<<" gc range is " << std::hex << dirty_start
+      dout(0)<<__func__<<" gc range is " << std::hex << dirty_start
 	      << "~" << dirty_end - dirty_start << std::dec << dendl;
     }
   }
