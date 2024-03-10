@@ -8435,7 +8435,7 @@ void BlueStore::_txc_state_proc(TransContext *txc)
 	     << " " << txc->get_state_name() << dendl;
     switch (txc->state) {
       case TransContext::STATE_PREPARE:
-        dout(0) <<"mydebug: in STATE_PREPARE" << dendl;
+        dout(20) <<"mydebug: in STATE_PREPARE" << dendl;
         txc->log_state_latency(logger, l_bluestore_state_prepare_lat);
         if (txc->ioc.has_pending_aios()) {
           dout(0) <<"mydebug: submit pending_aios" << dendl;
@@ -8447,13 +8447,13 @@ void BlueStore::_txc_state_proc(TransContext *txc)
       // ** fall-thru **
 
     case TransContext::STATE_AIO_WAIT:
-      dout(0) <<"mydebug: in STATE_AIO_WAIT" << dendl;
+      dout(20) <<"mydebug: in STATE_AIO_WAIT" << dendl;
       txc->log_state_latency(logger, l_bluestore_state_aio_wait_lat);
       _txc_finish_io(txc);  // may trigger blocked txc's too
       return;
 
     case TransContext::STATE_IO_DONE:
-       dout(0) <<"mydebug: in STATE_AIO_DONE" << dendl;
+       dout(20) <<"mydebug: in STATE_AIO_DONE" << dendl;
       //assert(txc->osr->qlock.is_locked());  // see _txc_finish_io
       if (txc->had_ios) {
 	      ++txc->osr->txc_with_unstable_io;
@@ -8490,12 +8490,12 @@ void BlueStore::_txc_state_proc(TransContext *txc)
         }
       }
       {
-        dout(0) <<"mydebug: kv_queue.push_back"<< dendl;
+        dout(20) <<"mydebug: kv_queue.push_back"<< dendl;
         std::lock_guard<std::mutex> l(kv_lock);
         kv_queue.push_back(txc);
         kv_cond.notify_one();
         if (txc->state != TransContext::STATE_KV_SUBMITTED) {
-          dout(0) <<"mydebug: kv_queue_unsubmitted.push_back"<< dendl;
+          dout(20) <<"mydebug: kv_queue_unsubmitted.push_back"<< dendl;
           kv_queue_unsubmitted.push_back(txc);
           ++txc->osr->kv_committing_serially;
         }
@@ -9025,7 +9025,7 @@ void BlueStore::_kv_sync_thread()
 	 !deferred_aggressive) &&
 	(bluefs_do_check_balance == false)) {
       if (kv_stop)
-	break;
+	      break;
       dout(20) << __func__ << " sleep" << dendl;
       std::cv_status status = kv_cond.wait_for(l,
         std::chrono::milliseconds(int64_t(cct->_conf->bluestore_bluefs_balance_interval * 1000)));
@@ -9034,6 +9034,14 @@ void BlueStore::_kv_sync_thread()
         bluefs_do_check_balance = true;
       }
     } else {
+      //试图积累一定量的io再执行
+      // if(kv_queue.size()<3){
+      //   l.unlock();
+      //   continue;
+      // }else{
+      //   dout(0) <<" mydebug: get 3 txcs queued" << dendl;
+      // }
+      
       deque<TransContext*> kv_submitting;
       deque<DeferredBatch*> deferred_done, deferred_stable;
       uint64_t aios = 0, costs = 0;
@@ -9043,9 +9051,11 @@ void BlueStore::_kv_sync_thread()
 	       << " deferred done " << deferred_done_queue.size()
 	       << " stable " << deferred_stable_queue.size()
 	       << dendl;
+      //commit类似于等待
       kv_committing.swap(kv_queue);
       kv_submitting.swap(kv_queue_unsubmitted);
       deferred_done.swap(deferred_done_queue);
+      //这里的deferred_stable_queue是上一次由done变为stable的
       deferred_stable.swap(deferred_stable_queue);
       aios = kv_ios;
       costs = kv_throttle_costs;
@@ -9054,6 +9064,13 @@ void BlueStore::_kv_sync_thread()
       utime_t start = ceph_clock_now();
       l.unlock();
 
+      // if(kv_committing.size()<3){
+      //   continue;
+      // }
+
+      if(kv_committing.size()!=0){
+          dout(0) << " mydebug: committing " << kv_committing.size() << dendl;
+      }
       dout(30) << __func__ << " committing " << kv_committing << dendl;
       dout(30) << __func__ << " submitting " << kv_submitting << dendl;
       dout(30) << __func__ << " deferred_done " << deferred_done << dendl;
@@ -9065,28 +9082,32 @@ void BlueStore::_kv_sync_thread()
       // deferred aios stable.  that means that if we do have done deferred
       // txcs AND we are not on a single device, we need to force a flush.
       if (bluefs_single_shared_device && bluefs) {
-	if (aios) {
-	  force_flush = true;
-	} else if (kv_committing.empty() && kv_submitting.empty() &&
-		   deferred_stable.empty()) {
-	  force_flush = true;  // there's nothing else to commit!
-	} else if (deferred_aggressive) {
-	  force_flush = true;
-	}
-      } else
-	force_flush = true;
-
+        if (aios) {
+          force_flush = true;
+        } else if (kv_committing.empty() && kv_submitting.empty() &&
+            deferred_stable.empty()) {
+          force_flush = true;  // there's nothing else to commit!
+        } else if (deferred_aggressive) {
+          force_flush = true;
+        }
+      } else{
+        force_flush = true;
+      }
+	    
+      //如果强制flush了，已经提交到rocksdb但还存储在内存中的的事务会强制落盘
+      //状态也就可以由done转化为stable
       if (force_flush) {
-	dout(20) << __func__ << " num_aios=" << aios
-		 << " force_flush=" << (int)force_flush
-		 << ", flushing, deferred done->stable" << dendl;
-	// flush/barrier on block device
-	bdev->flush();
+        dout(20) <<"mydebug: force_flush in _kv_sync_thread "<< dendl;
+        // flush/barrier on block device
+        bdev->flush();
 
-	// if we flush then deferred done are now deferred stable
-	deferred_stable.insert(deferred_stable.end(), deferred_done.begin(),
-			       deferred_done.end());
-	deferred_done.clear();
+        // if we flush then deferred done are now deferred stable
+        deferred_stable.insert(deferred_stable.end(), deferred_done.begin(),
+                  deferred_done.end());
+        deferred_done.clear();
+      }else{
+        dout(0) <<"mydebug: no force_flush in _kv_sync_thread "<< dendl;
+
       }
       utime_t after_flush = ceph_clock_now();
 
@@ -9099,46 +9120,50 @@ void BlueStore::_kv_sync_thread()
       // we submit.
       uint64_t new_nid_max = 0, new_blobid_max = 0;
       if (nid_last + cct->_conf->bluestore_nid_prealloc/2 > nid_max) {
-	KeyValueDB::Transaction t =
-	  kv_submitting.empty() ? synct : kv_submitting.front()->t;
-	new_nid_max = nid_last + cct->_conf->bluestore_nid_prealloc;
-	bufferlist bl;
-	::encode(new_nid_max, bl);
-	t->set(PREFIX_SUPER, "nid_max", bl);
-	dout(10) << __func__ << " new_nid_max " << new_nid_max << dendl;
+        KeyValueDB::Transaction t =
+          kv_submitting.empty() ? synct : kv_submitting.front()->t;
+        new_nid_max = nid_last + cct->_conf->bluestore_nid_prealloc;
+        bufferlist bl;
+        ::encode(new_nid_max, bl);
+        t->set(PREFIX_SUPER, "nid_max", bl);
+        dout(10) << __func__ << " new_nid_max " << new_nid_max << dendl;
       }
       if (blobid_last + cct->_conf->bluestore_blobid_prealloc/2 > blobid_max) {
-	KeyValueDB::Transaction t =
-	  kv_submitting.empty() ? synct : kv_submitting.front()->t;
-	new_blobid_max = blobid_last + cct->_conf->bluestore_blobid_prealloc;
-	bufferlist bl;
-	::encode(new_blobid_max, bl);
-	t->set(PREFIX_SUPER, "blobid_max", bl);
-	dout(10) << __func__ << " new_blobid_max " << new_blobid_max << dendl;
+        KeyValueDB::Transaction t =
+          kv_submitting.empty() ? synct : kv_submitting.front()->t;
+        new_blobid_max = blobid_last + cct->_conf->bluestore_blobid_prealloc;
+        bufferlist bl;
+        ::encode(new_blobid_max, bl);
+        t->set(PREFIX_SUPER, "blobid_max", bl);
+        dout(10) << __func__ << " new_blobid_max " << new_blobid_max << dendl;
       }
-
+      
+      //也就是kv_queue中的内容
       for (auto txc : kv_committing) {
-	if (txc->state == TransContext::STATE_KV_QUEUED) {
-	  txc->log_state_latency(logger, l_bluestore_state_kv_queued_lat);
-	  int r = cct->_conf->bluestore_debug_omit_kv_commit ? 0 : db->submit_transaction(txc->t);
-	  assert(r == 0);
-	  txc->state = TransContext::STATE_KV_SUBMITTED;
-	  _txc_applied_kv(txc);
-	  --txc->osr->kv_committing_serially;
-	  if (txc->osr->kv_submitted_waiters) {
-	    std::lock_guard<std::mutex> l(txc->osr->qlock);
-	    if (txc->osr->_is_all_kv_submitted()) {
-	      txc->osr->qcond.notify_all();
-	    }
-	  }
+        if (txc->state == TransContext::STATE_KV_QUEUED) {
+          txc->log_state_latency(logger, l_bluestore_state_kv_queued_lat);
+          int r = cct->_conf->bluestore_debug_omit_kv_commit ? 0 : db->submit_transaction(txc->t);
+          assert(r == 0);
+          txc->state = TransContext::STATE_KV_SUBMITTED;
+          _txc_applied_kv(txc);
+          --txc->osr->kv_committing_serially;
+          if (txc->osr->kv_submitted_waiters) {
+            std::lock_guard<std::mutex> l(txc->osr->qlock);
+            if (txc->osr->_is_all_kv_submitted()) {
+              txc->osr->qcond.notify_all();
+            }
+          }
 
-	} else {
-	  assert(txc->state == TransContext::STATE_KV_SUBMITTED);
-	  txc->log_state_latency(logger, l_bluestore_state_kv_queued_lat);
-	}
-	if (txc->had_ios) {
-	  --txc->osr->txc_with_unstable_io;
-	}
+        } else {
+          //这个地方为什么会是kv_submitted？
+          dout(0) << "mydebug: submitted txc in kv_committing" << dendl;
+          assert(txc->state == TransContext::STATE_KV_SUBMITTED);
+          txc->log_state_latency(logger, l_bluestore_state_kv_queued_lat);
+        }
+        if (txc->had_ios) {
+          //因为已经提交了一个了？
+          --txc->osr->txc_with_unstable_io;
+        }
       }
 
       // release throttle *before* we commit.  this allows new ops
@@ -9153,39 +9178,40 @@ void BlueStore::_kv_sync_thread()
       if (bluefs &&
 	  after_flush - bluefs_last_balance >
 	  cct->_conf->bluestore_bluefs_balance_interval) {
-	bluefs_last_balance = after_flush;
-	int r = _balance_bluefs_freespace(&bluefs_gift_extents);
-	assert(r >= 0);
-	if (r > 0) {
-	  for (auto& p : bluefs_gift_extents) {
-	    bluefs_extents.insert(p.offset, p.length);
-	  }
-	  bufferlist bl;
-	  ::encode(bluefs_extents, bl);
-	  dout(10) << __func__ << " bluefs_extents now 0x" << std::hex
-		   << bluefs_extents << std::dec << dendl;
-	  synct->set(PREFIX_SUPER, "bluefs_extents", bl);
-	}
+        bluefs_last_balance = after_flush;
+        int r = _balance_bluefs_freespace(&bluefs_gift_extents);
+        assert(r >= 0);
+        if (r > 0) {
+          for (auto& p : bluefs_gift_extents) {
+            bluefs_extents.insert(p.offset, p.length);
+          }
+          bufferlist bl;
+          ::encode(bluefs_extents, bl);
+          dout(10) << __func__ << " bluefs_extents now 0x" << std::hex
+            << bluefs_extents << std::dec << dendl;
+          synct->set(PREFIX_SUPER, "bluefs_extents", bl);
+        }
       }
       bluefs_do_check_balance = false;
 
       // cleanup sync deferred keys
+      //stable中的是已经落盘的tx，因为之前已经flush过了
       for (auto b : deferred_stable) {
-	for (auto& txc : b->txcs) {
-	  bluestore_deferred_transaction_t& wt = *txc.deferred_txn;
-	  if (!wt.released.empty()) {
-	    // kraken replay compat only
-	    txc.released = wt.released;
-	    dout(10) << __func__ << " deferred txn has released "
-		     << txc.released
-		     << " (we just upgraded from kraken) on " << &txc << dendl;
-	    _txc_finalize_kv(&txc, synct);
-	  }
-	  // cleanup the deferred
-	  string key;
-	  get_deferred_key(wt.seq, &key);
-	  synct->rm_single_key(PREFIX_DEFERRED, key);
-	}
+        for (auto& txc : b->txcs) {
+          bluestore_deferred_transaction_t& wt = *txc.deferred_txn;
+          if (!wt.released.empty()) {
+            // kraken replay compat only
+            txc.released = wt.released;
+            dout(10) << __func__ << " deferred txn has released "
+              << txc.released
+              << " (we just upgraded from kraken) on " << &txc << dendl;
+            _txc_finalize_kv(&txc, synct);
+          }
+          // cleanup the deferred
+          string key;
+          get_deferred_key(wt.seq, &key);
+          synct->rm_single_key(PREFIX_DEFERRED, key);
+        }
       }
 
       // submit synct synchronously (block and wait for it to commit)
@@ -9193,60 +9219,61 @@ void BlueStore::_kv_sync_thread()
       assert(r == 0);
 
       if (new_nid_max) {
-	nid_max = new_nid_max;
-	dout(10) << __func__ << " nid_max now " << nid_max << dendl;
+        nid_max = new_nid_max;
+        dout(10) << __func__ << " nid_max now " << nid_max << dendl;
       }
       if (new_blobid_max) {
-	blobid_max = new_blobid_max;
-	dout(10) << __func__ << " blobid_max now " << blobid_max << dendl;
+        blobid_max = new_blobid_max;
+        dout(10) << __func__ << " blobid_max now " << blobid_max << dendl;
       }
 
       {
-	utime_t finish = ceph_clock_now();
-	utime_t dur_flush = after_flush - start;
-	utime_t dur_kv = finish - after_flush;
-	utime_t dur = finish - start;
-	dout(20) << __func__ << " committed " << kv_committing.size()
-	  << " cleaned " << deferred_stable.size()
-	  << " in " << dur
-	  << " (" << dur_flush << " flush + " << dur_kv << " kv commit)"
-	  << dendl;
-	logger->tinc(l_bluestore_kv_flush_lat, dur_flush);
-	logger->tinc(l_bluestore_kv_commit_lat, dur_kv);
-	logger->tinc(l_bluestore_kv_lat, dur);
+        utime_t finish = ceph_clock_now();
+        utime_t dur_flush = after_flush - start;
+        utime_t dur_kv = finish - after_flush;
+        utime_t dur = finish - start;
+        dout(20) << __func__ << " committed " << kv_committing.size()
+          << " cleaned " << deferred_stable.size()
+          << " in " << dur
+          << " (" << dur_flush << " flush + " << dur_kv << " kv commit)"
+          << dendl;
+        logger->tinc(l_bluestore_kv_flush_lat, dur_flush);
+        logger->tinc(l_bluestore_kv_commit_lat, dur_kv);
+        logger->tinc(l_bluestore_kv_lat, dur);
       }
 
       if (bluefs) {
-	if (!bluefs_gift_extents.empty()) {
-	  _commit_bluefs_freespace(bluefs_gift_extents);
-	}
-	dout(20) << __func__ << " releasing old bluefs 0x" << std::hex
-		 << bluefs_extents_reclaiming << std::dec << dendl;
-	alloc->release(bluefs_extents_reclaiming);
-	bluefs_extents_reclaiming.clear();
+        if (!bluefs_gift_extents.empty()) {
+          _commit_bluefs_freespace(bluefs_gift_extents);
+        }
+        dout(20) << __func__ << " releasing old bluefs 0x" << std::hex
+          << bluefs_extents_reclaiming << std::dec << dendl;
+        alloc->release(bluefs_extents_reclaiming);
+        bluefs_extents_reclaiming.clear();
       }
 
       {
-	std::unique_lock<std::mutex> m(kv_finalize_lock);
-	if (kv_committing_to_finalize.empty()) {
-	  kv_committing_to_finalize.swap(kv_committing);
-	} else {
-	  kv_committing_to_finalize.insert(
-	    kv_committing_to_finalize.end(),
-	    kv_committing.begin(),
-	    kv_committing.end());
-	  kv_committing.clear();
-	}
-	if (deferred_stable_to_finalize.empty()) {
-	  deferred_stable_to_finalize.swap(deferred_stable);
-	} else {
-	  deferred_stable_to_finalize.insert(
-	    deferred_stable_to_finalize.end(),
-	    deferred_stable.begin(),
-	    deferred_stable.end());
-          deferred_stable.clear();
-	}
-	kv_finalize_cond.notify_one();
+        std::unique_lock<std::mutex> m(kv_finalize_lock);
+        //将已经commit的txc加入到finalize队列
+        if (kv_committing_to_finalize.empty()) {
+          kv_committing_to_finalize.swap(kv_committing);
+        } else {
+          kv_committing_to_finalize.insert(
+            kv_committing_to_finalize.end(),
+            kv_committing.begin(),
+            kv_committing.end());
+          kv_committing.clear();
+        }
+        if (deferred_stable_to_finalize.empty()) {
+          deferred_stable_to_finalize.swap(deferred_stable);
+        } else {
+          deferred_stable_to_finalize.insert(
+            deferred_stable_to_finalize.end(),
+            deferred_stable.begin(),
+            deferred_stable.end());
+                deferred_stable.clear();
+        }
+        kv_finalize_cond.notify_one();
       }
 
       l.lock();
@@ -9625,7 +9652,7 @@ int BlueStore::queue_transactions(
   logger->inc(l_bluestore_txc);
 
   // execute (start)
-  dout(0)<< "mydebug: " << txc->get_state_name() << dendl;
+  dout(20)<< "mydebug: " << txc->get_state_name() << dendl;
   _txc_state_proc(txc);
 
   logger->tinc(l_bluestore_submit_lat, ceph_clock_now() - start);
@@ -10970,6 +10997,7 @@ int BlueStore::_do_alloc_write(
 
     // queue io
     if (!g_conf->bluestore_debug_omit_block_device_write) {
+      //mydebug:将大写以deferred方式写入
       //if (l->length() <= prefer_deferred_size.load()||wi.big_write==true) {
       if (l->length() <= prefer_deferred_size.load()) { 
         dout(0) <<"deffer_big_write"<< dendl;
