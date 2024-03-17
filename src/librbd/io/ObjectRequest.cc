@@ -508,8 +508,9 @@ void AbstractObjectWriteRequest<I>::handle_pre_write_object_map_update(int r) {
 
 template <typename I>
 void AbstractObjectWriteRequest<I>::write_object() {
+
   I *image_ctx = this->m_ictx;
-  ldout(image_ctx->cct, 20) << dendl;
+  ldout(image_ctx->cct, 0) << "mydebug: write_object()in rados" << dendl;
 
   librados::ObjectWriteOperation write;
   if (m_copyup_enabled) {

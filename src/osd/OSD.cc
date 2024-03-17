@@ -7596,6 +7596,7 @@ void OSD::ms_fast_dispatch(Message *m)
   if (m->get_connection()->has_features(CEPH_FEATUREMASK_RESEND_ON_SPLIT) ||
       m->get_type() != CEPH_MSG_OSD_OP) {
     // queue it directly
+    dout(20)<<"queue directly in ms_fast_dispatch"<<dendl;
     enqueue_op(
       static_cast<MOSDFastDispatchOp*>(m)->get_spg(),
       op,
@@ -10837,6 +10838,7 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
 
   // peek at spg_t
   sdata->sdata_op_ordering_lock.Lock();
+  
   if (sdata->pqueue->empty()) {
     dout(20) << __func__ << " empty q, waiting" << dendl;
     // optimistically sleep a moment; maybe another work item will come along.
@@ -10853,6 +10855,7 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
       return;
     }
   }//如果是空的话就等待一段时间
+  dout(20)<<"mydebug: thread "<<thread_index<<", shard_index "<<shard_index<<", size = "<<sdata->pqueue->length()<<dendl;
   pair<spg_t, PGQueueable> item = sdata->pqueue->dequeue();
   if (osd->is_stopping()) {
     sdata->sdata_op_ordering_lock.Unlock();

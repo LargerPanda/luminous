@@ -68,6 +68,7 @@ bool DispatchQueue::can_fast_dispatch(const Message *m) const
 void DispatchQueue::fast_dispatch(Message *m)
 {
   uint64_t msize = pre_dispatch(m);
+  ldout(cct,20) <<"mydebug: remaining "<<msgr->get_dispatch_queue_len()<< dendl;
   msgr->ms_fast_dispatch(m);
   post_dispatch(m, msize);
 }
@@ -120,6 +121,7 @@ void DispatchQueue::run_local_delivery()
     int priority = mp.second;
     fast_preprocess(m);
     if (can_fast_dispatch(m)) {
+      ldout(cct,20) << "mydebug: can_fast_dispatch 124" << dendl;
       fast_dispatch(m);
     } else {
       enqueue(m, priority, 0);

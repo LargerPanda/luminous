@@ -290,6 +290,7 @@ void *Pipe::DelayedDelivery::entry()
       if (!stop_fast_dispatching_flag) {
         delay_dispatching = true;
         delay_lock.Unlock();
+        lgeneric_subdout(pipe->msgr->cct, ms, 20) << "mydebug: can_fast_dispatch 293" << dendl;
         pipe->in_q->fast_dispatch(m);
         delay_lock.Lock();
         delay_dispatching = false;
@@ -1814,16 +1815,17 @@ void Pipe::reader()
         delay_thread->queue(release, m);
       } else {
         if (in_q->can_fast_dispatch(m)) {
-	  reader_dispatching = true;
-          pipe_lock.Unlock();
-          in_q->fast_dispatch(m);
-          pipe_lock.Lock();
-	  reader_dispatching = false;
-	  if (state == STATE_CLOSED ||
-	      notify_on_dispatch_done) { // there might be somebody waiting
-	    notify_on_dispatch_done = false;
-	    cond.Signal();
-	  }
+          reader_dispatching = true;
+                pipe_lock.Unlock();
+                ldout(msgr->cct,20) << "mydebug: in_q->can_fast_dispatch 1819" << dendl;
+                in_q->fast_dispatch(m);
+                pipe_lock.Lock();
+          reader_dispatching = false;
+          if (state == STATE_CLOSED ||
+              notify_on_dispatch_done) { // there might be somebody waiting
+            notify_on_dispatch_done = false;
+            cond.Signal();
+          }
         } else {
           in_q->enqueue(m, m->get_priority(), conn_id);
         }

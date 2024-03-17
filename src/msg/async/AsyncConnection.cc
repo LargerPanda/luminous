@@ -790,6 +790,7 @@ void AsyncConnection::process()
             delay_state->queue(delay_period, release, message);
           } else if (async_msgr->ms_can_fast_dispatch(message)) {
             lock.unlock();
+            ldout(async_msgr->cct, 20) << "mydebug: async_msgr->ms_can_fast_dispatch" << dendl;
             dispatch_queue->fast_dispatch(message);
             recv_start_time = ceph::mono_clock::now();
             logger->tinc(l_msgr_running_fast_dispatch_time,

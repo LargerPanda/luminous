@@ -10401,7 +10401,7 @@ void BlueStore::_do_write_small(
           logger->inc(l_bluestore_write_small_pre_read);
 
           //这个时候已经read和modify完了，准备延迟write
-          dout(0)<<"mydebug: deffer write len;"<<b_len<<";in 10361"<<dendl;
+          dout(20)<<"mydebug: deffer write len;"<<b_len<<";in 10361"<<dendl;
           bluestore_deferred_op_t *op = _get_deferred_op(txc, o);
           op->op = bluestore_deferred_op_t::OP_WRITE;
           //先写cache
@@ -10747,7 +10747,7 @@ int BlueStore::_do_alloc_write(
 	   << " " << wctx->writes.size() << " blobs"
 	   << dendl;
   if (wctx->writes.empty()) {
-    dout(0) <<"mydebug: empty wctx->writes"<< dendl;
+    dout(20) <<"mydebug: empty wctx->writes"<< dendl;
     return 0;
   }
 
@@ -11105,7 +11105,7 @@ void BlueStore::_do_write_data(
   if (offset / min_alloc_size == (end - 1) / min_alloc_size &&
       (length != min_alloc_size)) {
     // we fall within the same block
-    dout(0)<<"mydebug: _do_write_small for the same block, len="<<length<<dendl;
+    dout(20)<<"mydebug: _do_write_small for the same block, len="<<length<<dendl;
     _do_write_small(txc, c, o, offset, length, p, wctx);
   } else {
     uint64_t head_offset, head_length;
@@ -11120,7 +11120,7 @@ void BlueStore::_do_write_data(
 
     middle_offset = head_offset + head_length;
     middle_length = length - head_length - tail_length;
-    dout(0)<<"mydebug: head_length="<<head_length<<",tail_length="<<tail_length<<dendl;
+    dout(20)<<"mydebug: head_length="<<head_length<<",tail_length="<<tail_length<<dendl;
     if (head_length) {
       dout(20)<<"mydebug: _do_write_small for head_length"<<dendl;
       _do_write_small(txc, c, o, head_offset, head_length, p, wctx);
